@@ -31,10 +31,17 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 pnpm install
 cp .env.example .env
 docker compose up -d postgres redis
+pnpm run db:migrate
 pnpm dev
 ```
 
 Open `http://localhost:5173`.
+
+Run the video worker in a second terminal when testing Wan video generation:
+
+```bash
+pnpm run worker:video
+```
 
 ## Environment Variables
 
@@ -61,15 +68,21 @@ WAN_VIDEO_DURATION=5
 
 ```bash
 pnpm dev
-pnpm run db:generate
-pnpm run db:migrate
 pnpm run worker:video
+pnpm run db:migrate
+pnpm run db:generate
 pnpm run typecheck
 pnpm run build
 pnpm run start
 ```
 
-Run `pnpm run worker:video` as a separate process alongside the web server to process Wan video queue jobs.
+- `pnpm dev` starts the React Router dev server.
+- `pnpm run worker:video` processes Redis/BullMQ Wan video jobs.
+- `pnpm run db:migrate` applies Drizzle migrations to Postgres.
+- `pnpm run db:generate` generates a new Drizzle migration after schema changes.
+- `pnpm run typecheck` regenerates route types and runs TypeScript.
+- `pnpm run build` creates the production build.
+- `pnpm run start` serves the production build.
 
 ## Product Direction
 

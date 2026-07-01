@@ -40,24 +40,6 @@ export async function enqueueVideoCreateJob(
   return job.id ?? "";
 }
 
-export async function enqueueVideoPollJob(
-  data: VideoPollJobData,
-  delay = 30_000,
-): Promise<string> {
-  const job = await getVideoQueue().add("video.poll", data, {
-    delay,
-    attempts: 10,
-    backoff: {
-      type: "fixed",
-      delay: 30_000,
-    },
-    removeOnComplete: 100,
-    removeOnFail: 500,
-  });
-
-  return job.id ?? "";
-}
-
 export function getRedisConnection() {
   const redisUrl = process.env.REDIS_URL;
 

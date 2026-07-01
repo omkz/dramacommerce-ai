@@ -58,6 +58,17 @@ export default function ProjectDetail() {
           <p className="mt-4 max-w-2xl text-slate-300">
             AI-generated product drama ad plan for {result.brief.platform}.
           </p>
+
+          {result.brief.imageUrl ? (
+            <div className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+              <img
+                src={result.brief.imageUrl}
+                alt={result.brief.productName}
+                className="max-h-[420px] w-full object-contain p-4"
+              />
+            </div>
+          ) : null}
+
         </section>
 
         <section className="mt-8 space-y-5">

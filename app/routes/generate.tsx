@@ -3,6 +3,7 @@ import { Form, redirect, useActionData } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import { saveProject } from "~/services/project-store.server";
 import { generateShowPlan } from "~/services/showrunner.server";
+import { saveUploadedImage } from "~/services/image-upload.server";
 
 export function meta() {
     return [
@@ -22,16 +23,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const mood = String(formData.get("mood") || "");
     const platform = String(formData.get("platform") || "");
     const duration = String(formData.get("duration") || "");
-    const productImage = formData.get("productImage");
 
-    const imageName =
-        productImage &&
-            typeof productImage === "object" &&
-            "name" in productImage &&
-            typeof productImage.name === "string" &&
-            productImage.name
-            ? productImage.name
-            : "No image uploaded";
+    const productImage = formData.get("productImage");
+    const uploadedImage = await saveUploadedImage(productImage);
 
     const showPlan = await generateShowPlan({
         productName,
@@ -39,7 +33,8 @@ export async function action({ request }: ActionFunctionArgs) {
         mood,
         platform,
         duration,
-        imageName,
+        imageName: uploadedImage.imageName,
+        imageUrl: uploadedImage.imageUrl,
     });
 
     const project = await saveProject(showPlan);

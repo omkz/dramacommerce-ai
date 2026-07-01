@@ -5,6 +5,7 @@ export type ProductBrief = {
   platform: string;
   duration: string;
   imageName: string;
+  imageUrl?: string;
 };
 
 export type StoryPackage = {

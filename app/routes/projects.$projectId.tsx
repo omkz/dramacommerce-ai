@@ -81,24 +81,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (intent === "create-video-task") {
     try {
-      const now = new Date().toISOString();
-
-      await saveVideoJob(projectId, {
-        scene: scene.scene,
-        provider: "wan",
-        status: "QUEUED",
-        prompt: scene.videoPrompt,
-        attempts: 0,
-        nextPollAt: new Date(Date.now() + 30_000).toISOString(),
-        createdAt: now,
-        updatedAt: now,
-      });
-
       const queueJobId = await enqueueVideoCreateJob({
         projectId,
         scene: scene.scene,
         prompt: scene.videoPrompt,
       });
+
+      const now = new Date().toISOString();
 
       await saveVideoJob(projectId, {
         scene: scene.scene,
@@ -109,7 +98,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         attempts: 0,
         nextPollAt: new Date(Date.now() + 30_000).toISOString(),
         createdAt: now,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       });
 
       return redirect(`/projects/${projectId}`);

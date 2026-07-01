@@ -35,6 +35,13 @@ export default function Home() {
           </a>
 
           <a
+            href="/projects"
+            className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:bg-white/10"
+          >
+            View Projects
+          </a>
+
+          <a
             href="#how-it-works"
             className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:bg-white/10"
           >

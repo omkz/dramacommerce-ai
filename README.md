@@ -90,15 +90,36 @@ pnpm run start
 - `pnpm run build` creates the production build.
 - `pnpm run start` serves the production build.
 
-## Product Direction
+## Architecture
 
-DramaCommerce AI is designed as a production-ready creative operations tool for merchants. The current product flow proves the core path: Qwen multi-agent planning, persisted projects, and Wan video generation for the first scene. See `docs/architecture.md` for system design and `docs/operations.md` for production readiness notes.
+```text
+User
+  ↓
+React Router full-stack app
+  ├─ /generate product brief form
+  ├─ Qwen multi-agent showrunner pipeline
+  ├─ Postgres project store
+  ├─ Redis/BullMQ video queue
+  ├─ local image uploads
+  └─ /projects/:id project detail
+       ├─ storyboard
+       ├─ video prompts
+       └─ Wan Scene 1 video task
+              ↓
+        Alibaba Cloud Model Studio / DashScope
+```
+
+The showrunner flow is split into four Qwen-powered stages: Story Agent, Director Agent, Prompt Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects.
+
+Wan video generation is queued. The web app stores video job state in Postgres and enqueues work in Redis/BullMQ. The `worker:video` process creates Wan tasks, schedules polling jobs, and updates status, task IDs, attempts, video URLs, and provider errors.
 
 ## Docker
 
 ```bash
 docker build -t dramacommerce-ai .
-docker run --env-file .env -p 3000:3000 dramacommerce-ai
+docker run --rm --env-file .env dramacommerce-ai pnpm run db:migrate
+docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 dramacommerce-ai
+docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce-ai pnpm run worker:video
 ```
 
 ## Product Flow
@@ -114,3 +135,17 @@ docker run --env-file .env -p 3000:3000 dramacommerce-ai
 ## Deployment Notes
 
 Deploy the web app and video worker as separate container processes on Alibaba Cloud ECS. Use managed Postgres-compatible storage for `DATABASE_URL`, managed Redis/Tair for `REDIS_URL`, and persistent storage for `uploads/` until media is moved to Alibaba OSS.
+
+Production checklist:
+
+- Store `.env` as server-side secrets and never commit it.
+- Run `pnpm run db:migrate` before starting web or worker processes.
+- Put the web app behind HTTPS before using real merchant data.
+- Back up the Postgres database.
+- Configure log collection for Qwen, Wan, upload, worker, and storage errors.
+- Move uploaded product images and generated video assets to Alibaba OSS as usage grows.
+- Use `/health` for uptime checks; it returns `200` when Postgres and Redis are reachable and `503` when either dependency fails.
+
+## Hackathon Notes
+
+For the Qwen Cloud hackathon, submit under **Track 2: AI Showrunner**. The demo flow is: generate a product drama plan from `/generate`, show the four-stage Qwen pipeline output, create a Wan video task for Scene 1, run the worker, refresh status, and preview the generated clip.

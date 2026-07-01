@@ -32,6 +32,7 @@ export type EditorPackage = {
 };
 
 export type ShowPlan = {
+  source: "qwen" | "mock";
   brief: ProductBrief;
   concept: string;
   hook: string;

@@ -6,34 +6,44 @@ import { callQwenJson } from "~/services/qwen.server";
 import type { ProductBrief, ShowPlan } from "~/types/showrunner";
 
 export async function generateShowPlan(brief: ProductBrief): Promise<ShowPlan> {
-  try {
-    return await generateQwenShowPlan(brief);
-  } catch (error) {
-    console.warn("Falling back to mock showrunner:", error);
-    return generateMockShowPlan(brief);
-  }
+    try {
+        const qwenPlan = await generateQwenShowPlan(brief);
+
+        return {
+            ...qwenPlan,
+            source: "qwen",
+        };
+    } catch (error) {
+        console.warn("Falling back to mock showrunner:", error);
+
+        return {
+            ...generateMockShowPlan(brief),
+            source: "mock",
+        };
+    }
 }
 
 export function generateMockShowPlan(brief: ProductBrief): ShowPlan {
-  const story = runStoryAgent(brief);
-  const directedScenes = runDirectorAgent(brief, story);
-  const storyboard = runPromptAgent(brief, directedScenes);
-  const editorPackage = runEditorAgent(brief, storyboard);
+    const story = runStoryAgent(brief);
+    const directedScenes = runDirectorAgent(brief, story);
+    const storyboard = runPromptAgent(brief, directedScenes);
+    const editorPackage = runEditorAgent(brief, storyboard);
 
-  return {
-    brief,
-    concept: story.concept,
-    hook: story.hook,
-    voiceOver: story.voiceOver,
-    storyboard,
-    timeline: editorPackage.timeline,
-    caption: editorPackage.caption,
-    cta: editorPackage.cta,
-  };
+    return {
+        source: "mock",
+        brief,
+        concept: story.concept,
+        hook: story.hook,
+        voiceOver: story.voiceOver,
+        storyboard,
+        timeline: editorPackage.timeline,
+        caption: editorPackage.caption,
+        cta: editorPackage.cta,
+    };
 }
 
 async function generateQwenShowPlan(brief: ProductBrief): Promise<ShowPlan> {
-  const system = `
+    const system = `
 You are DramaCommerce AI, an AI showrunner for short product drama ads.
 
 You create structured ad plans for TikTok, Instagram Reels, and YouTube Shorts.
@@ -43,7 +53,7 @@ Do not include markdown.
 Do not include explanations.
 `;
 
-  const user = `
+    const user = `
 Create a short product drama ad plan from this product brief.
 
 Product brief:
@@ -87,10 +97,11 @@ Rules:
 - Keep the ad practical for a small online merchant.
 `;
 
-  const result = await callQwenJson<ShowPlan>({ system, user });
+    const result = await callQwenJson<ShowPlan>({ system, user });
 
-  return {
-    ...result,
-    brief,
-  };
+    return {
+        ...result,
+        source: "qwen",
+        brief,
+    };
 }

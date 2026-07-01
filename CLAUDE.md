@@ -42,7 +42,7 @@ If Qwen env vars are missing or the Qwen call fails, the app falls back to a det
 
 ### Storage
 
-No database — `services/project-store.server.ts` persists everything to a single `data/projects.json` file (read-modify-write, no locking; fine for single-instance MVP only). Uploaded images are written to `uploads/` on local disk and served back through `routes/uploads.$filename.tsx`, which guards against path traversal by rejecting filenames containing `/` or `..`. Both `data/` and `uploads/` are gitignored.
+`services/project-store.server.ts` persists to a SQLite database at `data/app.db` using Node's built-in `node:sqlite` (`DatabaseSync`) — no external dependency or native module needed. Two tables: `projects` (id, created_at, `show_plan` stored as a JSON blob — the `ShowPlan` shape isn't normalized) and `video_jobs` (one row per project+scene, upserted via `ON CONFLICT`). On first run, if `projects` is empty and a legacy `data/projects.json` file exists, it's auto-imported (one-time migration from the earlier JSON-file-based store). Uploaded images are written to `uploads/` on local disk and served back through `routes/uploads.$filename.tsx`, which guards against path traversal by rejecting filenames containing `/` or `..`. Both `data/` and `uploads/` are gitignored.
 
 ### Types
 

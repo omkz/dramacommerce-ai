@@ -7,7 +7,7 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - Product brief form with image upload
 - Qwen-powered showrunner planning with mock fallback
 - Structured 5-scene storyboard and editing timeline
-- Local project persistence in `data/projects.json`
+- Local project persistence in SQLite (`data/app.db`)
 - Local image storage in `uploads/`
 - Wan text-to-video task creation for Scene 1
 - Manual video task polling and video preview
@@ -21,7 +21,7 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - TypeScript
 - Qwen / Alibaba Cloud Model Studio compatible chat API
 - Wan / DashScope video generation API
-- Local JSON file storage for the MVP
+- SQLite (Node's built-in `node:sqlite`) for local storage
 
 ## Local Setup
 

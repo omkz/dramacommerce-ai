@@ -6,7 +6,7 @@ User
 React Router full-stack app on Alibaba ECS
   ├─ /generate product brief form
   ├─ Qwen showrunner planner
-  ├─ JSON project store
+  ├─ SQLite project store
   ├─ local image uploads
   └─ /projects/:id project detail
        ├─ storyboard
@@ -36,7 +36,7 @@ Scene 1 videoPrompt
   ↓
 createWanTextToVideoTask()
   ↓
-save task_id in data/projects.json
+save task_id in data/app.db (SQLite)
   ↓
 queryWanVideoTask()
   ↓

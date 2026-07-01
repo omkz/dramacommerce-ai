@@ -1,6 +1,7 @@
 {
   "name": "dramacommerce-ai",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "react-router build",

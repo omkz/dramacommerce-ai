@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Form, useActionData } from "react-router";
+import { Form, redirect, useActionData } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
+import { saveProject } from "~/services/project-store.server";
 import { generateShowPlan } from "~/services/showrunner.server";
 
 export function meta() {
@@ -40,6 +41,10 @@ export async function action({ request }: ActionFunctionArgs) {
         duration,
         imageName,
     });
+
+    const project = await saveProject(showPlan);
+
+    return redirect(`/projects/${project.id}`);
 
     return showPlan;
 }

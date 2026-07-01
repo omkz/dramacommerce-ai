@@ -1,8 +1,35 @@
 import { Form, redirect, useActionData } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
+import { ZodError } from "zod";
 import { saveProject } from "~/services/project-store.server";
 import { generateShowPlan } from "~/services/showrunner.server";
 import { saveUploadedImage } from "~/services/image-upload.server";
+import {
+    QwenApiError,
+    QwenConfigurationError,
+    QwenResponseError,
+} from "~/services/qwen.server";
+
+const MOOD_OPTIONS = new Set([
+    "Cinematic",
+    "Funny",
+    "Premium",
+    "Emotional",
+    "Fast-paced",
+]);
+
+const PLATFORM_OPTIONS = new Set([
+    "TikTok",
+    "Instagram Reels",
+    "YouTube Shorts",
+]);
+
+const DURATION_OPTIONS = new Set([
+    "15 seconds",
+    "30 seconds",
+    "45 seconds",
+    "60 seconds",
+]);
 
 export function meta() {
     return [
@@ -17,14 +44,34 @@ export function meta() {
 export async function action({ request }: ActionFunctionArgs) {
     const formData = await request.formData();
 
-    const productName = String(formData.get("productName") || "");
-    const targetAudience = String(formData.get("targetAudience") || "");
-    const mood = String(formData.get("mood") || "");
-    const platform = String(formData.get("platform") || "");
-    const duration = String(formData.get("duration") || "");
+    const productName = getFormString(formData, "productName");
+    const targetAudience = getFormString(formData, "targetAudience");
+    const mood = getFormString(formData, "mood");
+    const platform = getFormString(formData, "platform");
+    const duration = getFormString(formData, "duration");
+
+    const validationError = validateBriefFields({
+        productName,
+        targetAudience,
+        mood,
+        platform,
+        duration,
+    });
+
+    if (validationError) {
+        return { error: validationError };
+    }
 
     const productImage = formData.get("productImage");
-    const uploadedImage = await saveUploadedImage(productImage);
+    let uploadedImage: Awaited<ReturnType<typeof saveUploadedImage>>;
+
+    try {
+        uploadedImage = await saveUploadedImage(productImage);
+    } catch (error) {
+        return {
+            error: getUploadErrorMessage(error),
+        };
+    }
 
     const brief = {
         productName,
@@ -44,14 +91,81 @@ export async function action({ request }: ActionFunctionArgs) {
         console.error("Failed to generate show plan:", error);
 
         return {
-            error:
-                "Unable to generate a show plan with Qwen. Check the Qwen environment variables or try again later.",
+            error: getQwenErrorMessage(error),
         };
     }
 
     const project = await saveProject(showPlan);
 
     return redirect(`/projects/${project.id}`);
+}
+
+function getFormString(formData: FormData, key: string): string {
+    return String(formData.get(key) || "").trim();
+}
+
+function validateBriefFields({
+    productName,
+    targetAudience,
+    mood,
+    platform,
+    duration,
+}: {
+    productName: string;
+    targetAudience: string;
+    mood: string;
+    platform: string;
+    duration: string;
+}): string | null {
+    if (!productName) {
+        return "Product name is required.";
+    }
+
+    if (!targetAudience) {
+        return "Target audience is required.";
+    }
+
+    if (!MOOD_OPTIONS.has(mood)) {
+        return "Choose a valid mood.";
+    }
+
+    if (!PLATFORM_OPTIONS.has(platform)) {
+        return "Choose a valid platform.";
+    }
+
+    if (!DURATION_OPTIONS.has(duration)) {
+        return "Choose a valid duration.";
+    }
+
+    return null;
+}
+
+function getUploadErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return "Unable to upload the product image.";
+}
+
+function getQwenErrorMessage(error: unknown): string {
+    if (error instanceof QwenConfigurationError) {
+        return "Qwen is not configured. Set DASHSCOPE_API_KEY and QWEN_BASE_URL before generating.";
+    }
+
+    if (error instanceof QwenApiError) {
+        return `Qwen request failed with status ${error.status}. Check the API key, base URL, model, or provider status.`;
+    }
+
+    if (error instanceof QwenResponseError) {
+        return "Qwen returned an invalid response. Try again, or adjust the prompt/schema if this keeps happening.";
+    }
+
+    if (error instanceof ZodError) {
+        return "Qwen returned a show plan that does not match the required schema.";
+    }
+
+    return "Unable to generate a show plan with Qwen. Try again later.";
 }
 
 export default function Generate() {

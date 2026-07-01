@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-DramaCommerce AI is a React Router 8 full-stack TypeScript app. Application code lives in `app/`: route modules are in `app/routes/`, route registration is explicit in `app/routes.ts`, shared UI/root setup is in `app/root.tsx`, and global styles are in `app/app.css`. Server-only business logic is split between `app/services/*.server.ts` and `app/agents/*.server.ts`; do not import these modules into client-only code. Shared generated-plan types live in `app/types/showrunner.ts`. Static assets belong in `public/`, documentation in `docs/`, and local runtime files in gitignored `data/` and `uploads/`.
+DramaCommerce AI is a React Router 8 full-stack TypeScript app. Application code lives in `app/`: route modules are in `app/routes/`, route registration is explicit in `app/routes.ts`, shared UI/root setup is in `app/root.tsx`, and global styles are in `app/app.css`. Qwen-powered showrunner stages live in `app/agents/*.server.ts`; shared services live in `app/services/*.server.ts`. Do not import server-only modules into client-only code. Shared generated-plan types live in `app/types/showrunner.ts`. Static assets belong in `public/`, documentation in `docs/`, and local runtime files in gitignored `data/` and `uploads/`.
 
 ## Build, Test, and Development Commands
 

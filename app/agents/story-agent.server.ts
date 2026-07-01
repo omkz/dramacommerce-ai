@@ -1,11 +1,38 @@
+import { z } from "zod";
+import { callQwenJson } from "~/services/qwen.server";
 import type { ProductBrief, StoryPackage } from "~/types/showrunner";
 
-export function runStoryAgent(brief: ProductBrief): StoryPackage {
-  const { productName, mood } = brief;
+const storyPackageSchema = z.object({
+  concept: z.string(),
+  hook: z.string(),
+  voiceOver: z.string(),
+});
 
-  return {
-    concept: `A ${mood.toLowerCase()} short product drama where a busy commuter almost loses confidence before an important moment, then ${productName} becomes the subtle product hero that helps them move with speed, comfort, and style.`,
-    hook: "What if your shoes could change the way your day begins?",
-    voiceOver: `Every morning starts with pressure. The train is leaving. The meeting is waiting. The city does not slow down. But with ${productName}, every step feels lighter, sharper, and more confident. Move faster. Look sharper. Arrive ready.`,
-  };
+export async function runStoryAgent(
+  brief: ProductBrief,
+): Promise<StoryPackage> {
+  const rawResult = await callQwenJson({
+    system: `You are the Story Agent for DramaCommerce AI. Return only valid JSON.`,
+    user: `
+Create the narrative core for a short product drama ad.
+
+Product brief:
+${JSON.stringify(brief, null, 2)}
+
+Return JSON:
+{
+  "concept": "string",
+  "hook": "string",
+  "voiceOver": "string"
+}
+
+Rules:
+- Make the story relevant to the target audience.
+- Keep the product visible but naturally integrated.
+- Write for ${brief.platform} in a ${brief.mood} mood.
+- The voice-over should fit ${brief.duration}.
+`,
+  });
+
+  return storyPackageSchema.parse(rawResult);
 }

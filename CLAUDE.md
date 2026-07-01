@@ -31,13 +31,12 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
 ### Pipeline: brief → showrunner → project → video
 
 1. `routes/generate.tsx` (`action`) collects the form/multipart submission, saves the uploaded image via `services/image-upload.server.ts`, calls `services/showrunner.server.ts#generateShowPlan`, persists the result with `services/project-store.server.ts#saveProject`, and redirects to `/projects/:id`.
-2. `services/showrunner.server.ts#generateShowPlan` calls the Qwen path (`generateQwenShowPlan` → `services/qwen.server.ts#callQwenJson` → validated by `services/showrunner-validator.server.ts` with a Zod schema). Failures bubble to the `/generate` action, which shows an error instead of saving a project.
-3. Legacy mock agent modules remain in `app/agents/` from the earlier MVP pipeline, each consuming/producing the shared `ShowPlan`-related types from `app/types/showrunner.ts`:
+2. `services/showrunner.server.ts#generateShowPlan` orchestrates four Qwen-powered agents, each validating its own JSON with Zod:
    - `agents/story-agent.server.ts` — brief → `StoryPackage` (concept, hook, voice-over)
    - `agents/director-agent.server.ts` — brief + story → `DirectedScene[]` (5 fixed scenes with visuals/durations)
-   - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a text-to-video `videoPrompt` per scene)
+   - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a Wan-ready `videoPrompt` per scene)
    - `agents/editor-agent.server.ts` — storyboard → `EditorPackage` (timeline, caption, CTA)
-   - The active Qwen path asks the model to produce the same shape directly in one JSON call instead of running these four steps.
+3. Failures bubble to the `/generate` action, which shows an error instead of saving a project.
 4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for scene 1 only (`intent=create-video-task` / `intent=refresh-video-task` form actions call `services/wan-video.server.ts`, and job state is stored via `services/project-store.server.ts#saveVideoJob`). Only scene 1 gets a video job by design, to keep the MVP cheap and predictable.
 
 ### Storage
@@ -46,8 +45,8 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
 
 ### Types
 
-`app/types/showrunner.ts` is the shared contract (`ProductBrief`, `StoryPackage`, `DirectedScene`, `StoryboardScene`, `EditorPackage`, `ShowPlan`) that every agent, the Qwen validator, and both route UIs depend on — check this file first when changing the shape of generated data.
+`app/types/showrunner.ts` is the shared contract (`ProductBrief`, `StoryPackage`, `DirectedScene`, `StoryboardScene`, `EditorPackage`, `ShowPlan`) that the Qwen agents and route UIs depend on — check this file first when changing the shape of generated data.
 
 ### Route conventions
 
-Routes are registered explicitly in `app/routes.ts` (not filesystem-based) using `@react-router/dev/routes`. `.server.ts` suffixes mark server-only modules (agents, services) that must not be imported from client-rendered code.
+Routes are registered explicitly in `app/routes.ts` (not filesystem-based) using `@react-router/dev/routes`. `.server.ts` suffixes mark server-only modules, agents, and services that must not be imported from client-rendered code.

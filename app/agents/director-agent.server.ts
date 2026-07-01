@@ -1,53 +1,58 @@
+import { z } from "zod";
+import { callQwenJson } from "~/services/qwen.server";
 import type {
   DirectedScene,
   ProductBrief,
   StoryPackage,
 } from "~/types/showrunner";
 
-export function runDirectorAgent(
-  brief: ProductBrief,
-  _story: StoryPackage,
-): DirectedScene[] {
-  const { productName } = brief;
+const directedSceneSchema = z.object({
+  scene: z.number(),
+  duration: z.string(),
+  title: z.string(),
+  visual: z.string(),
+  voiceOver: z.string(),
+});
 
-  return [
+const directorPackageSchema = z.object({
+  scenes: z.array(directedSceneSchema).length(5),
+});
+
+export async function runDirectorAgent(
+  brief: ProductBrief,
+  story: StoryPackage,
+): Promise<DirectedScene[]> {
+  const rawResult = await callQwenJson({
+    system: `You are the Director Agent for DramaCommerce AI. Return only valid JSON.`,
+    user: `
+Turn this story package into a 5-scene vertical short-drama storyboard.
+
+Product brief:
+${JSON.stringify(brief, null, 2)}
+
+Story package:
+${JSON.stringify(story, null, 2)}
+
+Return JSON:
+{
+  "scenes": [
     {
-      scene: 1,
-      duration: "0–4s",
-      title: "The rush",
-      visual:
-        "A young professional checks the time, grabs a bag, and rushes out of a small apartment.",
-      voiceOver: "Every morning starts with pressure.",
-    },
-    {
-      scene: 2,
-      duration: "4–8s",
-      title: "Product close-up",
-      visual: `Close-up shot of ${productName} being worn quickly before stepping outside.`,
-      voiceOver: "The city does not slow down.",
-    },
-    {
-      scene: 3,
-      duration: "8–16s",
-      title: "City movement",
-      visual:
-        "The character walks fast through a city street, crossing traffic, rain reflections on the road.",
-      voiceOver: "But every step can feel lighter.",
-    },
-    {
-      scene: 4,
-      duration: "16–24s",
-      title: "Confidence shift",
-      visual:
-        "The character slows down, breathes, smiles, and enters the building with confidence.",
-      voiceOver: "Sharper. Faster. More confident.",
-    },
-    {
-      scene: 5,
-      duration: "24–30s",
-      title: "Hero shot and CTA",
-      visual: `Hero product shot of ${productName} with bold text overlay and clear call-to-action.`,
-      voiceOver: "Move faster. Look sharper. Arrive ready.",
-    },
-  ];
+      "scene": 1,
+      "duration": "0-4s",
+      "title": "string",
+      "visual": "string",
+      "voiceOver": "string"
+    }
+  ]
+}
+
+Rules:
+- Create exactly 5 scenes.
+- Make the pacing fit ${brief.duration}.
+- Include concrete shots, motion, product placement, and emotional beats.
+- Keep each voice-over line aligned with the story package.
+`,
+  });
+
+  return directorPackageSchema.parse(rawResult).scenes;
 }

@@ -11,6 +11,30 @@ type QwenChatResponse = {
   }>;
 };
 
+export class QwenConfigurationError extends Error {
+  constructor() {
+    super("Qwen environment variables are not configured.");
+    this.name = "QwenConfigurationError";
+  }
+}
+
+export class QwenApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(`Qwen API error: ${status} ${message}`);
+    this.name = "QwenApiError";
+  }
+}
+
+export class QwenResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QwenResponseError";
+  }
+}
+
 export async function callQwenJson({
   system,
   user,
@@ -23,7 +47,7 @@ export async function callQwenJson({
   const model = process.env.QWEN_MODEL || "qwen-plus";
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Qwen environment variables are not configured.");
+    throw new QwenConfigurationError();
   }
 
   const messages: QwenMessage[] = [
@@ -47,17 +71,21 @@ export async function callQwenJson({
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Qwen API error: ${response.status} ${errorText}`);
+    throw new QwenApiError(response.status, errorText);
   }
 
   const data = (await response.json()) as QwenChatResponse;
   const content = data.choices?.[0]?.message?.content;
 
   if (!content) {
-    throw new Error("Qwen returned an empty response.");
+    throw new QwenResponseError("Qwen returned an empty response.");
   }
 
-  return JSON.parse(cleanJsonResponse(content));
+  try {
+    return JSON.parse(cleanJsonResponse(content));
+  } catch (error) {
+    throw new QwenResponseError("Qwen returned invalid JSON.");
+  }
 }
 
 function cleanJsonResponse(content: string): string {

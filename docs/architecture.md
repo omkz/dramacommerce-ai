@@ -5,7 +5,7 @@ User
   ↓
 React Router full-stack app on Alibaba ECS
   ├─ /generate product brief form
-  ├─ Qwen showrunner planner
+  ├─ Qwen multi-agent showrunner pipeline
   ├─ SQLite project store
   ├─ local image uploads
   └─ /projects/:id project detail
@@ -16,16 +16,16 @@ React Router full-stack app on Alibaba ECS
         Alibaba Cloud Model Studio / DashScope
 ```
 
-## Agent Pipeline
+## Showrunner Pipeline
 
-The planning pipeline is intentionally split into showrunner-like stages:
+The showrunner flow is split into four Qwen-powered stages:
 
 1. Story Agent: concept, hook, voice-over
-2. Director Agent: scenes and shot list
-3. Prompt Agent: video prompts per scene
-4. Editor Agent: timeline, caption, CTA
+2. Director Agent: five scenes, shot direction, timing
+3. Prompt Agent: Wan-ready text-to-video prompts
+4. Editor Agent: editing timeline, caption, CTA
 
-Qwen generates the structured show plan. When Qwen fails or env vars are missing, the app returns an error and does not create a project.
+Each stage returns structured JSON and validates it before the next stage runs. When Qwen fails or env vars are missing, the app returns an error and does not create a project.
 
 ## Video Pipeline
 

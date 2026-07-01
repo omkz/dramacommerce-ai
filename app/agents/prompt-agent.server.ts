@@ -1,41 +1,60 @@
+import { z } from "zod";
+import { callQwenJson } from "~/services/qwen.server";
 import type {
   DirectedScene,
   ProductBrief,
   StoryboardScene,
 } from "~/types/showrunner";
 
-export function runPromptAgent(
+const storyboardSceneSchema = z.object({
+  scene: z.number(),
+  duration: z.string(),
+  title: z.string(),
+  visual: z.string(),
+  voiceOver: z.string(),
+  videoPrompt: z.string(),
+});
+
+const promptPackageSchema = z.object({
+  storyboard: z.array(storyboardSceneSchema).length(5),
+});
+
+export async function runPromptAgent(
   brief: ProductBrief,
   scenes: DirectedScene[],
-): StoryboardScene[] {
-  return scenes.map((scene) => ({
-    ...scene,
-    videoPrompt: createVideoPrompt(brief, scene),
-  }));
+): Promise<StoryboardScene[]> {
+  const rawResult = await callQwenJson({
+    system: `You are the Video Prompt Agent for DramaCommerce AI. Return only valid JSON.`,
+    user: `
+Add Wan text-to-video prompts to each directed scene.
+
+Product brief:
+${JSON.stringify(brief, null, 2)}
+
+Directed scenes:
+${JSON.stringify(scenes, null, 2)}
+
+Return JSON:
+{
+  "storyboard": [
+    {
+      "scene": 1,
+      "duration": "0-4s",
+      "title": "string",
+      "visual": "string",
+      "voiceOver": "string",
+      "videoPrompt": "string"
+    }
+  ]
 }
 
-function createVideoPrompt(
-  brief: ProductBrief,
-  scene: DirectedScene,
-): string {
-  const { productName, mood, platform } = brief;
-  const moodStyle = mood.toLowerCase();
+Rules:
+- Preserve scene numbers, titles, durations, visuals, and voice-over lines.
+- Add detailed videoPrompt text for realistic vertical text-to-video generation.
+- Include camera movement, subject, setting, lighting, mood, and product visibility.
+- Avoid impossible product/logo details not present in the brief.
+`,
+  });
 
-  if (scene.scene === 1) {
-    return `Vertical ${platform} video, ${moodStyle} lighting, young professional rushing out of apartment, urban morning atmosphere, fast camera movement, realistic commercial style.`;
-  }
-
-  if (scene.scene === 2) {
-    return `Cinematic close-up of ${productName}, hands tying the shoes, premium product detail shot, shallow depth of field, realistic lighting, vertical video.`;
-  }
-
-  if (scene.scene === 3) {
-    return `Urban commuter walking fast through city street, subtle rain reflections, stylish outfit, dynamic tracking shot, ${moodStyle} commercial video, vertical frame.`;
-  }
-
-  if (scene.scene === 4) {
-    return `Young professional entering modern office building confidently, soft cinematic lighting, emotional shift, product visible but natural, premium ad style.`;
-  }
-
-  return `Hero shot of ${productName}, clean dark background, dramatic light sweep, bold text overlay, premium e-commerce advertisement, vertical ${platform} ending shot.`;
+  return promptPackageSchema.parse(rawResult).storyboard;
 }

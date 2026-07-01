@@ -31,7 +31,7 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
 ### Pipeline: brief → showrunner → project → video
 
 1. `routes/generate.tsx` (`action`) collects the form/multipart submission, saves the uploaded image via `services/image-upload.server.ts`, calls `services/showrunner.server.ts#generateShowPlan`, persists the result with `services/project-store.server.ts#saveProject`, and redirects to `/projects/:id`.
-2. `services/showrunner.server.ts#generateShowPlan` orchestrates four Qwen-powered agents, each validating its own JSON with Zod:
+2. `services/showrunner.server.ts#generateShowPlan` orchestrates four Qwen-powered agents. Each agent validates its JSON through `services/showrunner-validator.server.ts` before the next stage runs:
    - `agents/story-agent.server.ts` — brief → `StoryPackage` (concept, hook, voice-over)
    - `agents/director-agent.server.ts` — brief + story → `DirectedScene[]` (5 fixed scenes with visuals/durations)
    - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a Wan-ready `videoPrompt` per scene)

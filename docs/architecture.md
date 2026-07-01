@@ -25,7 +25,7 @@ The showrunner flow is split into four Qwen-powered stages:
 3. Prompt Agent: Wan-ready text-to-video prompts
 4. Editor Agent: editing timeline, caption, CTA
 
-Each stage returns structured JSON and validates it before the next stage runs. When Qwen fails or env vars are missing, the app returns an error and does not create a project.
+Each stage returns structured JSON and validates it through `showrunner-validator.server.ts` before the next stage runs. When Qwen fails or env vars are missing, the app returns an error and does not create a project.
 
 ## Video Pipeline
 

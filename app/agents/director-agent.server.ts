@@ -1,22 +1,10 @@
-import { z } from "zod";
 import { callQwenJson } from "~/services/qwen.server";
+import { validateDirectedScenes } from "~/services/showrunner-validator.server";
 import type {
   DirectedScene,
   ProductBrief,
   StoryPackage,
 } from "~/types/showrunner";
-
-const directedSceneSchema = z.object({
-  scene: z.number(),
-  duration: z.string(),
-  title: z.string(),
-  visual: z.string(),
-  voiceOver: z.string(),
-});
-
-const directorPackageSchema = z.object({
-  scenes: z.array(directedSceneSchema).length(5),
-});
 
 export async function runDirectorAgent(
   brief: ProductBrief,
@@ -54,5 +42,5 @@ Rules:
 `,
   });
 
-  return directorPackageSchema.parse(rawResult).scenes;
+  return validateDirectedScenes(rawResult);
 }

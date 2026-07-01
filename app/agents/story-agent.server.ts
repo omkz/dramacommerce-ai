@@ -1,12 +1,6 @@
-import { z } from "zod";
 import { callQwenJson } from "~/services/qwen.server";
+import { validateStoryPackage } from "~/services/showrunner-validator.server";
 import type { ProductBrief, StoryPackage } from "~/types/showrunner";
-
-const storyPackageSchema = z.object({
-  concept: z.string(),
-  hook: z.string(),
-  voiceOver: z.string(),
-});
 
 export async function runStoryAgent(
   brief: ProductBrief,
@@ -34,5 +28,5 @@ Rules:
 `,
   });
 
-  return storyPackageSchema.parse(rawResult);
+  return validateStoryPackage(rawResult);
 }

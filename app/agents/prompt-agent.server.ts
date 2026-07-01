@@ -1,23 +1,10 @@
-import { z } from "zod";
 import { callQwenJson } from "~/services/qwen.server";
+import { validateStoryboard } from "~/services/showrunner-validator.server";
 import type {
   DirectedScene,
   ProductBrief,
   StoryboardScene,
 } from "~/types/showrunner";
-
-const storyboardSceneSchema = z.object({
-  scene: z.number(),
-  duration: z.string(),
-  title: z.string(),
-  visual: z.string(),
-  voiceOver: z.string(),
-  videoPrompt: z.string(),
-});
-
-const promptPackageSchema = z.object({
-  storyboard: z.array(storyboardSceneSchema).length(5),
-});
 
 export async function runPromptAgent(
   brief: ProductBrief,
@@ -56,5 +43,5 @@ Rules:
 `,
   });
 
-  return promptPackageSchema.parse(rawResult).storyboard;
+  return validateStoryboard(rawResult);
 }

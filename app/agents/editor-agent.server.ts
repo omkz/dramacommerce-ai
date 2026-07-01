@@ -1,16 +1,10 @@
-import { z } from "zod";
 import { callQwenJson } from "~/services/qwen.server";
+import { validateEditorPackage } from "~/services/showrunner-validator.server";
 import type {
   EditorPackage,
   ProductBrief,
   StoryboardScene,
 } from "~/types/showrunner";
-
-const editorPackageSchema = z.object({
-  timeline: z.array(z.string()).min(1),
-  caption: z.string(),
-  cta: z.string(),
-});
 
 export async function runEditorAgent(
   brief: ProductBrief,
@@ -41,5 +35,5 @@ Rules:
 `,
   });
 
-  return editorPackageSchema.parse(rawResult);
+  return validateEditorPackage(rawResult);
 }

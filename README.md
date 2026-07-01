@@ -5,7 +5,7 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 ## Features
 
 - Product brief form with image upload
-- Qwen-powered showrunner planning
+- Qwen-powered multi-agent showrunner pipeline
 - Structured 5-scene storyboard and editing timeline
 - Local project persistence in SQLite (`data/app.db`)
 - Local image storage in `uploads/`
@@ -59,6 +59,10 @@ pnpm run typecheck
 pnpm run build
 pnpm run start
 ```
+
+## Hackathon Track
+
+This project targets the Qwen Cloud hackathon **Track 2: AI Showrunner**. The showrunner pipeline is split into Qwen-powered Story, Director, Prompt, and Editor agents before creating a Wan text-to-video task for Scene 1. See `docs/architecture.md` and `docs/hackathon-submission.md` for the architecture and submission checklist.
 
 ## Docker
 

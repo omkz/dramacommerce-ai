@@ -7,7 +7,7 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/migrate.mjs",
     "worker:video": "node scripts/video-worker.mjs",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc"

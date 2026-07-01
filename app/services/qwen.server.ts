@@ -11,13 +11,13 @@ type QwenChatResponse = {
   }>;
 };
 
-export async function callQwenJson<T>({
+export async function callQwenJson({
   system,
   user,
 }: {
   system: string;
   user: string;
-}): Promise<T> {
+}): Promise<unknown> {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.QWEN_BASE_URL;
   const model = process.env.QWEN_MODEL || "qwen-plus";
@@ -40,7 +40,7 @@ export async function callQwenJson<T>({
     body: JSON.stringify({
       model,
       messages,
-      temperature: 0.7,
+      temperature: 0.5,
       response_format: { type: "json_object" },
     }),
   });
@@ -57,5 +57,14 @@ export async function callQwenJson<T>({
     throw new Error("Qwen returned an empty response.");
   }
 
-  return JSON.parse(content) as T;
+  return JSON.parse(cleanJsonResponse(content));
+}
+
+function cleanJsonResponse(content: string): string {
+  return content
+    .trim()
+    .replace(/^```json/i, "")
+    .replace(/^```/i, "")
+    .replace(/```$/i, "")
+    .trim();
 }

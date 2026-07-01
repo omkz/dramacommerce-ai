@@ -4,6 +4,7 @@ import { runPromptAgent } from "~/agents/prompt-agent.server";
 import { runStoryAgent } from "~/agents/story-agent.server";
 import { callQwenJson } from "~/services/qwen.server";
 import type { ProductBrief, ShowPlan } from "~/types/showrunner";
+import { validateQwenShowPlan } from "~/services/showrunner-validator.server";
 
 export async function generateShowPlan(brief: ProductBrief): Promise<ShowPlan> {
     try {
@@ -97,11 +98,7 @@ Rules:
 - Keep the ad practical for a small online merchant.
 `;
 
-    const result = await callQwenJson<ShowPlan>({ system, user });
+    const rawResult = await callQwenJson({ system, user });
 
-    return {
-        ...result,
-        source: "qwen",
-        brief,
-    };
+    return validateQwenShowPlan(rawResult, brief);
 }

@@ -31,6 +31,13 @@ const DURATION_OPTIONS = new Set([
     "60 seconds",
 ]);
 
+const pipelineStages = [
+    "Story Agent",
+    "Director Agent",
+    "Prompt Agent",
+    "Editor Agent",
+];
+
 export function meta() {
     return [
         { title: "Generate Product Drama | DramaCommerce AI" },
@@ -190,8 +197,8 @@ export default function Generate() {
 
                         <p className="mt-4 max-w-2xl text-slate-300">
                             Upload one product photo and describe the audience, mood, and
-                            platform. The AI showrunner will turn it into a story, storyboard,
-                            video prompts, voice-over, subtitles, and editing timeline.
+                            platform. Four Qwen agents will turn it into a story, storyboard,
+                            Wan video prompts, voice-over, subtitles, and editing timeline.
                         </p>
 
                         <Form
@@ -325,11 +332,27 @@ export default function Generate() {
 
                     <aside className="space-y-5">
                         <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-                            <h2 className="text-xl font-bold">Showrunner output</h2>
+                            <h2 className="text-xl font-bold">Showrunner pipeline</h2>
                             <p className="mt-4 text-sm leading-6 text-slate-400">
                                 Successful Qwen generations are saved as projects and opened
                                 automatically. If Qwen is unavailable, no mock project is created.
                             </p>
+
+                            <div className="mt-5 space-y-3">
+                                {pipelineStages.map((stage, index) => (
+                                    <div
+                                        key={stage}
+                                        className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-900 p-3"
+                                    >
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-sm font-bold text-emerald-200">
+                                            {index + 1}
+                                        </span>
+                                        <span className="text-sm font-medium text-slate-200">
+                                            {stage}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </aside>
                 </div>

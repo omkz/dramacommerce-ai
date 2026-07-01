@@ -10,6 +10,29 @@ import {
   queryWanVideoTask,
 } from "~/services/wan-video.server";
 
+const pipelineStages = [
+  {
+    name: "Story Agent",
+    output: "Concept, hook, voice-over",
+    detail: "Turns the product brief into a short-drama narrative spine.",
+  },
+  {
+    name: "Director Agent",
+    output: "Five-scene storyboard",
+    detail: "Breaks the story into timed vertical-video scenes and shots.",
+  },
+  {
+    name: "Prompt Agent",
+    output: "Wan video prompts",
+    detail: "Adds detailed text-to-video prompts for each directed scene.",
+  },
+  {
+    name: "Editor Agent",
+    output: "Timeline, caption, CTA",
+    detail: "Prepares the edit plan and social publishing package.",
+  },
+];
+
 export async function loader({ params }: LoaderFunctionArgs) {
   const projectId = params.projectId;
 
@@ -179,6 +202,31 @@ export default function ProjectDetail() {
                 : "This project was created before Qwen-only generation was enforced."}
             </p>
           </div>
+
+          <ResultCard title="Qwen Showrunner Pipeline">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {pipelineStages.map((stage, index) => (
+                <div
+                  key={stage.name}
+                  className="rounded-xl border border-white/10 bg-slate-900 p-4"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">
+                    Stage {index + 1}
+                  </p>
+
+                  <h3 className="mt-2 font-bold">{stage.name}</h3>
+
+                  <p className="mt-2 text-sm font-medium text-slate-200">
+                    {stage.output}
+                  </p>
+
+                  <p className="mt-3 text-sm leading-6 text-slate-400">
+                    {stage.detail}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </ResultCard>
 
           <ResultCard title="Brief">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

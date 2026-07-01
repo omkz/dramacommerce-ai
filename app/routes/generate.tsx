@@ -1,4 +1,4 @@
-import { Form, redirect, useActionData } from "react-router";
+import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import { ZodError } from "zod";
 import { saveProject } from "~/services/project-store.server";
@@ -177,6 +177,8 @@ function getQwenErrorMessage(error: unknown): string {
 
 export default function Generate() {
     const actionData = useActionData<typeof action>();
+    const navigation = useNavigation();
+    const isGenerating = navigation.state !== "idle";
 
     return (
         <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -317,10 +319,18 @@ export default function Generate() {
 
                             <button
                                 type="submit"
+                                disabled={isGenerating}
                                 className="w-full rounded-xl bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
                             >
-                                Generate Show Plan
+                                {isGenerating ? "Generating with Qwen..." : "Generate Show Plan"}
                             </button>
+
+                            {isGenerating ? (
+                                <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
+                                    Running the Story, Director, Prompt, and Editor agents. This
+                                    can take a little longer than a single model call.
+                                </div>
+                            ) : null}
 
                             {actionData?.error ? (
                                 <p className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-100">

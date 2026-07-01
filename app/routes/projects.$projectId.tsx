@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Form, Link, redirect, useLoaderData } from "react-router";
+import { Form, Link, redirect, useLoaderData, useNavigation } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   getProject,
@@ -127,11 +127,15 @@ export function meta() {
 
 export default function ProjectDetail() {
   const project = useLoaderData<typeof loader>();
+  const navigation = useNavigation();
   const result = project.showPlan;
   const firstScene = result.storyboard[0];
   const firstSceneVideoJob = project.videoJobs?.find(
     (job) => job.scene === firstScene?.scene,
   );
+  const pendingIntent = navigation.formData?.get("intent");
+  const isCreatingVideo = pendingIntent === "create-video-task";
+  const isRefreshingVideo = pendingIntent === "refresh-video-task";
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -300,9 +304,12 @@ export default function ProjectDetail() {
                       <input type="hidden" name="scene" value={firstScene.scene} />
                       <button
                         type="submit"
+                        disabled={isCreatingVideo}
                         className="rounded-xl bg-white px-5 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
                       >
-                        Generate Video for Scene 1
+                        {isCreatingVideo
+                          ? "Creating video task..."
+                          : "Generate Video for Scene 1"}
                       </button>
                     </Form>
                   ) : (
@@ -311,9 +318,12 @@ export default function ProjectDetail() {
                       <input type="hidden" name="scene" value={firstScene.scene} />
                       <button
                         type="submit"
+                        disabled={isRefreshingVideo}
                         className="rounded-xl border border-white/15 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
                       >
-                        Refresh Video Status
+                        {isRefreshingVideo
+                          ? "Refreshing status..."
+                          : "Refresh Video Status"}
                       </button>
                     </Form>
                   )}

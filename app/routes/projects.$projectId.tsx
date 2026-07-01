@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
-import { Form, Link, redirect, useLoaderData, useNavigation } from "react-router";
+import {
+  Form,
+  Link,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+} from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   getProject,
@@ -73,38 +80,47 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "create-video-task") {
-    const now = new Date().toISOString();
+    try {
+      const now = new Date().toISOString();
 
-    await saveVideoJob(projectId, {
-      scene: scene.scene,
-      provider: "wan",
-      status: "QUEUED",
-      prompt: scene.videoPrompt,
-      attempts: 0,
-      nextPollAt: new Date(Date.now() + 30_000).toISOString(),
-      createdAt: now,
-      updatedAt: now,
-    });
+      await saveVideoJob(projectId, {
+        scene: scene.scene,
+        provider: "wan",
+        status: "QUEUED",
+        prompt: scene.videoPrompt,
+        attempts: 0,
+        nextPollAt: new Date(Date.now() + 30_000).toISOString(),
+        createdAt: now,
+        updatedAt: now,
+      });
 
-    const queueJobId = await enqueueVideoCreateJob({
-      projectId,
-      scene: scene.scene,
-      prompt: scene.videoPrompt,
-    });
+      const queueJobId = await enqueueVideoCreateJob({
+        projectId,
+        scene: scene.scene,
+        prompt: scene.videoPrompt,
+      });
 
-    await saveVideoJob(projectId, {
-      scene: scene.scene,
-      provider: "wan",
-      queueJobId,
-      status: "QUEUED",
-      prompt: scene.videoPrompt,
-      attempts: 0,
-      nextPollAt: new Date(Date.now() + 30_000).toISOString(),
-      createdAt: now,
-      updatedAt: new Date().toISOString(),
-    });
+      await saveVideoJob(projectId, {
+        scene: scene.scene,
+        provider: "wan",
+        queueJobId,
+        status: "QUEUED",
+        prompt: scene.videoPrompt,
+        attempts: 0,
+        nextPollAt: new Date(Date.now() + 30_000).toISOString(),
+        createdAt: now,
+        updatedAt: new Date().toISOString(),
+      });
 
-    return redirect(`/projects/${projectId}`);
+      return redirect(`/projects/${projectId}`);
+    } catch (error) {
+      console.error("Failed to enqueue video job:", error);
+
+      return {
+        error:
+          "Unable to queue the video job. Check Redis/BullMQ configuration and try again.",
+      };
+    }
   }
 
   if (intent === "refresh-video-task") {
@@ -120,20 +136,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return redirect(`/projects/${projectId}`);
     }
 
-    const task = await queryWanVideoTask(currentJob.taskId);
+    try {
+      const task = await queryWanVideoTask(currentJob.taskId);
 
-    await saveVideoJob(projectId, {
-      ...currentJob,
-      status: task.status,
-      videoUrl: task.videoUrl,
-      errorMessage: task.errorMessage,
-      attempts: currentJob.attempts + 1,
-      lastPolledAt: new Date().toISOString(),
-      nextPollAt: getNextVideoPollAt(task.status),
-      updatedAt: new Date().toISOString(),
-    });
+      await saveVideoJob(projectId, {
+        ...currentJob,
+        status: task.status,
+        videoUrl: task.videoUrl,
+        errorMessage: task.errorMessage,
+        attempts: currentJob.attempts + 1,
+        lastPolledAt: new Date().toISOString(),
+        nextPollAt: getNextVideoPollAt(task.status),
+        updatedAt: new Date().toISOString(),
+      });
 
-    return redirect(`/projects/${projectId}`);
+      return redirect(`/projects/${projectId}`);
+    } catch (error) {
+      console.error("Failed to refresh video task:", error);
+
+      return {
+        error:
+          "Unable to refresh the Wan video task. Check provider configuration or try again later.",
+      };
+    }
   }
 
   throw new Response("Invalid intent", { status: 400 });
@@ -159,6 +184,7 @@ export function meta() {
 
 export default function ProjectDetail() {
   const project = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const result = project.showPlan;
   const firstScene = result.storyboard[0];
@@ -295,6 +321,12 @@ export default function ProjectDetail() {
                   This keeps generation cost predictable before queued multi-scene
                   generation is enabled.
                 </p>
+
+                {actionData?.error ? (
+                  <p className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-100">
+                    {actionData.error}
+                  </p>
+                ) : null}
 
                 {firstSceneVideoJob?.videoUrl ? (
                   <video

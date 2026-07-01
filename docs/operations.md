@@ -51,6 +51,8 @@ Qwen generation fails closed: no project is saved when the Qwen request, JSON pa
 
 Wan video generation is task-based. The web app stores a queued video job in Postgres and enqueues work in Redis/BullMQ. The `pnpm run worker:video` process creates Wan tasks, schedules polling jobs, and updates Postgres with status, task IDs, attempts, video URLs, and provider errors.
 
+Use `/health` for uptime checks. It returns HTTP 200 when Postgres and Redis are reachable, and HTTP 503 when either dependency fails.
+
 ## Production Roadmap
 
 - Add authenticated merchant accounts and per-store project isolation.

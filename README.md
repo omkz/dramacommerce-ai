@@ -37,6 +37,12 @@ pnpm dev
 
 Open `http://localhost:5173`.
 
+Health check endpoint:
+
+```text
+http://localhost:5173/health
+```
+
 Run the video worker in a second terminal when testing Wan video generation:
 
 ```bash

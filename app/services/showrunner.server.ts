@@ -1,45 +1,13 @@
-import { runDirectorAgent } from "~/agents/director-agent.server";
-import { runEditorAgent } from "~/agents/editor-agent.server";
-import { runPromptAgent } from "~/agents/prompt-agent.server";
-import { runStoryAgent } from "~/agents/story-agent.server";
 import { callQwenJson } from "~/services/qwen.server";
 import type { ProductBrief, ShowPlan } from "~/types/showrunner";
 import { validateQwenShowPlan } from "~/services/showrunner-validator.server";
 
 export async function generateShowPlan(brief: ProductBrief): Promise<ShowPlan> {
-    try {
-        const qwenPlan = await generateQwenShowPlan(brief);
-
-        return {
-            ...qwenPlan,
-            source: "qwen",
-        };
-    } catch (error) {
-        console.warn("Falling back to mock showrunner:", error);
-
-        return {
-            ...generateMockShowPlan(brief),
-            source: "mock",
-        };
-    }
-}
-
-export function generateMockShowPlan(brief: ProductBrief): ShowPlan {
-    const story = runStoryAgent(brief);
-    const directedScenes = runDirectorAgent(brief, story);
-    const storyboard = runPromptAgent(brief, directedScenes);
-    const editorPackage = runEditorAgent(brief, storyboard);
+    const qwenPlan = await generateQwenShowPlan(brief);
 
     return {
-        source: "mock",
-        brief,
-        concept: story.concept,
-        hook: story.hook,
-        voiceOver: story.voiceOver,
-        storyboard,
-        timeline: editorPackage.timeline,
-        caption: editorPackage.caption,
-        cta: editorPackage.cta,
+        ...qwenPlan,
+        source: "qwen",
     };
 }
 

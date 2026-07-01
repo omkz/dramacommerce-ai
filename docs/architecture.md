@@ -25,7 +25,7 @@ The planning pipeline is intentionally split into showrunner-like stages:
 3. Prompt Agent: video prompts per scene
 4. Editor Agent: timeline, caption, CTA
 
-When Qwen is configured, Qwen generates the structured show plan. When Qwen fails or env vars are missing, the app falls back to the local mock agent pipeline so the demo remains usable.
+Qwen generates the structured show plan. When Qwen fails or env vars are missing, the app returns an error and does not create a project.
 
 ## Video Pipeline
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-DramaCommerce AI is a React Router 8 full-stack app. A merchant uploads a product image plus a short brief (audience, mood, platform, duration); the app runs an AI "showrunner" pipeline that produces a story concept, hook, voice-over, a 5-scene storyboard with video prompts, an editing timeline, a social caption/CTA, and can kick off a real text-to-video render for scene 1 via Alibaba Cloud's Wan model.
+DramaCommerce AI is a React Router 8 full-stack app. A merchant uploads a product image plus a short brief (audience, mood, platform, duration); the app runs a Qwen-powered AI "showrunner" pipeline that produces a story concept, hook, voice-over, a 5-scene storyboard with video prompts, an editing timeline, a social caption/CTA, and can kick off a real text-to-video render for scene 1 via Alibaba Cloud's Wan model.
 
 ## Commands
 
@@ -24,20 +24,20 @@ Copy `.env.example` to `.env`. Two separate Alibaba Cloud DashScope surfaces are
 - `DASHSCOPE_API_KEY`, `QWEN_BASE_URL` (includes `/compatible-mode/v1` — OpenAI-compatible chat completions), `QWEN_MODEL` — for the showrunner planning step.
 - `DASHSCOPE_VIDEO_BASE_URL` (no `/compatible-mode/v1` suffix — uses `/api/v1/services/...` and `/api/v1/tasks/...`), `WAN_VIDEO_MODEL`, `WAN_VIDEO_RESOLUTION`, `WAN_VIDEO_RATIO`, `WAN_VIDEO_DURATION` — for Wan video generation.
 
-If Qwen env vars are missing or the Qwen call fails, the app falls back to a deterministic mock generator rather than erroring — this is intentional (see Architecture below), not a bug to "fix" by making it throw.
+If Qwen env vars are missing or the Qwen call fails, generation returns an error and no project is created. Do not reintroduce automatic mock fallback for production generation.
 
 ## Architecture
 
 ### Pipeline: brief → showrunner → project → video
 
 1. `routes/generate.tsx` (`action`) collects the form/multipart submission, saves the uploaded image via `services/image-upload.server.ts`, calls `services/showrunner.server.ts#generateShowPlan`, persists the result with `services/project-store.server.ts#saveProject`, and redirects to `/projects/:id`.
-2. `services/showrunner.server.ts#generateShowPlan` tries the Qwen path first (`generateQwenShowPlan` → `services/qwen.server.ts#callQwenJson` → validated by `services/showrunner-validator.server.ts` with a Zod schema) and falls back to `generateMockShowPlan` on any failure, tagging the result's `source` field as `"qwen"` or `"mock"` so the UI can show which path was used.
-3. The mock path runs four small pure "agent" functions in sequence, each consuming/producing the shared `ShowPlan`-related types from `app/types/showrunner.ts`:
+2. `services/showrunner.server.ts#generateShowPlan` calls the Qwen path (`generateQwenShowPlan` → `services/qwen.server.ts#callQwenJson` → validated by `services/showrunner-validator.server.ts` with a Zod schema). Failures bubble to the `/generate` action, which shows an error instead of saving a project.
+3. Legacy mock agent modules remain in `app/agents/` from the earlier MVP pipeline, each consuming/producing the shared `ShowPlan`-related types from `app/types/showrunner.ts`:
    - `agents/story-agent.server.ts` — brief → `StoryPackage` (concept, hook, voice-over)
    - `agents/director-agent.server.ts` — brief + story → `DirectedScene[]` (5 fixed scenes with visuals/durations)
    - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a text-to-video `videoPrompt` per scene)
    - `agents/editor-agent.server.ts` — storyboard → `EditorPackage` (timeline, caption, CTA)
-   - The Qwen path asks the model to produce the same shape directly in one JSON call instead of running these four steps.
+   - The active Qwen path asks the model to produce the same shape directly in one JSON call instead of running these four steps.
 4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for scene 1 only (`intent=create-video-task` / `intent=refresh-video-task` form actions call `services/wan-video.server.ts`, and job state is stored via `services/project-store.server.ts#saveVideoJob`). Only scene 1 gets a video job by design, to keep the MVP cheap and predictable.
 
 ### Storage

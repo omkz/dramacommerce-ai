@@ -30,4 +30,4 @@ Git history uses short imperative commit subjects such as `Add Wan video generat
 
 ## Security & Configuration Tips
 
-Copy `.env.example` to `.env` and keep API keys out of git. `QWEN_BASE_URL` should include `/compatible-mode/v1`; `DASHSCOPE_VIDEO_BASE_URL` should not. Preserve the mock fallback path when Qwen is unavailable so local demos remain usable.
+Copy `.env.example` to `.env` and keep API keys out of git. `QWEN_BASE_URL` should include `/compatible-mode/v1`; `DASHSCOPE_VIDEO_BASE_URL` should not. Do not add automatic mock fallback for production generation; Qwen failures should surface as errors.

@@ -5,7 +5,7 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 ## Features
 
 - Product brief form with image upload
-- Qwen-powered showrunner planning with mock fallback
+- Qwen-powered showrunner planning
 - Structured 5-scene storyboard and editing timeline
 - Local project persistence in SQLite (`data/app.db`)
 - Local image storage in `uploads/`
@@ -71,7 +71,7 @@ docker run --env-file .env -p 3000:3000 dramacommerce-ai
 
 1. Open `/generate`.
 2. Upload a product image and submit a product brief.
-3. The app generates a showrunner plan using Qwen. If Qwen fails, it falls back to a mock plan.
+3. The app generates a showrunner plan using Qwen. If Qwen is unavailable, generation fails without creating a mock project.
 4. The result is saved as a project and shown at `/projects/:id`.
 5. Click **Generate Video for Scene 1**.
 6. Click **Refresh Video Status** until the Wan task succeeds.

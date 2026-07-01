@@ -22,6 +22,7 @@ type WanQueryTaskResponse = {
 };
 
 export type VideoGenerationStatus =
+  | "QUEUED"
   | "PENDING"
   | "RUNNING"
   | "SUCCEEDED"

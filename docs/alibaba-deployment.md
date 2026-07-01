@@ -16,6 +16,8 @@ nano .env
 Fill in:
 
 ```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
+REDIS_URL=redis://HOST:6379
 DASHSCOPE_API_KEY=...
 QWEN_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen-plus
@@ -28,6 +30,7 @@ WAN_VIDEO_MODEL=wan2.1-t2v-turbo
 ```bash
 docker build -t dramacommerce-ai .
 docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 dramacommerce-ai
+docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce-ai pnpm run worker:video
 ```
 
 Open:
@@ -39,10 +42,12 @@ http://YOUR_ECS_PUBLIC_IP:3000
 ## 4. Production checks
 
 - Store `.env` as server-side secrets and do not commit it.
-- Mount persistent volumes for `data/` and `uploads/` if using local storage.
+- Use managed Postgres-compatible storage for `DATABASE_URL`.
+- Use managed Redis/Tair for `REDIS_URL`.
+- Mount persistent storage for `uploads/` until media is moved to OSS.
 - Put the app behind HTTPS before using it with real merchant data.
 - Configure log collection for Qwen, Wan, upload, and storage errors.
-- Back up `data/app.db` until project storage is moved to a managed database.
+- Back up the Postgres database.
 
 ## 5. Hackathon proof
 
@@ -50,4 +55,4 @@ For Devpost, include the ECS URL or screen recording, this repository link, this
 
 ## 6. Storage roadmap
 
-`data/` and `uploads/` are local to the ECS container filesystem by default. This is acceptable for the first deploy when backed by persistent volumes. For production scale, move images and generated videos to Alibaba OSS and project data to a managed database.
+`uploads/` is local to the ECS container filesystem by default. This is acceptable for the first deploy when backed by persistent storage. For production scale, move images and generated videos to Alibaba OSS.

@@ -7,10 +7,11 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - Product brief form with image upload
 - Qwen-powered multi-agent showrunner pipeline
 - Structured 5-scene storyboard and editing timeline
-- Local project persistence in SQLite (`data/app.db`)
+- Postgres project and video job persistence
+- Redis/BullMQ background queue for Wan video jobs
 - Local image storage in `uploads/`
 - Wan text-to-video task creation for Scene 1
-- Manual video task polling and video preview
+- Worker-driven video task polling and video preview
 - Dockerfile ready for Alibaba Cloud ECS
 
 ## Tech Stack
@@ -21,13 +22,15 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - TypeScript
 - Qwen / Alibaba Cloud Model Studio compatible chat API
 - Wan / DashScope video generation API
-- SQLite (Node's built-in `node:sqlite`) for local storage
+- Postgres for durable application data
+- Redis and BullMQ for background jobs
 
 ## Local Setup
 
 ```bash
 pnpm install
 cp .env.example .env
+docker compose up -d postgres redis
 pnpm dev
 ```
 
@@ -36,6 +39,9 @@ Open `http://localhost:5173`.
 ## Environment Variables
 
 ```env
+DATABASE_URL=postgresql://dramacommerce:dramacommerce@localhost:5432/dramacommerce
+REDIS_URL=redis://localhost:6379
+
 DASHSCOPE_API_KEY=sk-xxxxx
 QWEN_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen-plus
@@ -55,10 +61,13 @@ WAN_VIDEO_DURATION=5
 
 ```bash
 pnpm dev
+pnpm run worker:video
 pnpm run typecheck
 pnpm run build
 pnpm run start
 ```
+
+Run `pnpm run worker:video` as a separate process alongside the web server to process Wan video queue jobs.
 
 ## Product Direction
 
@@ -83,4 +92,4 @@ docker run --env-file .env -p 3000:3000 dramacommerce-ai
 
 ## Deployment Notes
 
-Deploy this as a Docker container on Alibaba Cloud ECS for the first production target. For durable production use, mount persistent storage for `data/` and `uploads/`, then migrate media to Alibaba OSS and project data to a managed database as traffic grows.
+Deploy the web app and video worker as separate container processes on Alibaba Cloud ECS. Use managed Postgres-compatible storage for `DATABASE_URL`, managed Redis/Tair for `REDIS_URL`, and persistent storage for `uploads/` until media is moved to Alibaba OSS.

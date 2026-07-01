@@ -6,7 +6,8 @@ User
 React Router full-stack app on Alibaba ECS
   ├─ /generate product brief form
   ├─ Qwen multi-agent showrunner pipeline
-  ├─ SQLite project store
+  ├─ Postgres project store
+  ├─ Redis/BullMQ video queue
   ├─ local image uploads
   └─ /projects/:id project detail
        ├─ storyboard
@@ -36,7 +37,7 @@ Scene 1 videoPrompt
   ↓
 createWanTextToVideoTask()
   ↓
-save task_id in data/app.db (SQLite)
+save task_id/status in Postgres
   ↓
 queryWanVideoTask()
   ↓

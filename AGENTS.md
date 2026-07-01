@@ -26,7 +26,7 @@ No test runner or lint script is currently configured. For now, validate changes
 
 ## Commit & Pull Request Guidelines
 
-Git history uses short imperative commit subjects such as `Add Wan video generation for scene 1` and `Migrate project storage from JSON file to SQLite`. Keep commits focused and explain user-visible behavior in the subject. Pull requests should include a concise summary, manual verification steps, linked issues when relevant, screenshots for UI changes, and notes about any environment variable or storage changes.
+Git history uses short imperative commit subjects such as `Add Wan video generation for scene 1` and `Add Qwen multi-agent showrunner pipeline`. Keep commits focused and explain user-visible behavior in the subject. Pull requests should include a concise summary, manual verification steps, linked issues when relevant, screenshots for UI changes, and notes about any environment variable or storage changes.
 
 ## Security & Configuration Tips
 

@@ -5,10 +5,8 @@ import {
   getProject,
   saveVideoJob,
 } from "~/services/project-store.server";
-import {
-  createWanTextToVideoTask,
-  queryWanVideoTask,
-} from "~/services/wan-video.server";
+import { queryWanVideoTask } from "~/services/wan-video.server";
+import { enqueueVideoCreateJob } from "~/services/video-queue.server";
 
 const pipelineStages = [
   {
@@ -75,16 +73,35 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "create-video-task") {
-    const task = await createWanTextToVideoTask(scene.videoPrompt);
     const now = new Date().toISOString();
 
     await saveVideoJob(projectId, {
       scene: scene.scene,
-      taskId: task.taskId,
-      status: task.status,
+      provider: "wan",
+      status: "QUEUED",
       prompt: scene.videoPrompt,
+      attempts: 0,
+      nextPollAt: new Date(Date.now() + 30_000).toISOString(),
       createdAt: now,
       updatedAt: now,
+    });
+
+    const queueJobId = await enqueueVideoCreateJob({
+      projectId,
+      scene: scene.scene,
+      prompt: scene.videoPrompt,
+    });
+
+    await saveVideoJob(projectId, {
+      scene: scene.scene,
+      provider: "wan",
+      queueJobId,
+      status: "QUEUED",
+      prompt: scene.videoPrompt,
+      attempts: 0,
+      nextPollAt: new Date(Date.now() + 30_000).toISOString(),
+      createdAt: now,
+      updatedAt: new Date().toISOString(),
     });
 
     return redirect(`/projects/${projectId}`);
@@ -99,6 +116,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       throw new Response("Video task not found", { status: 404 });
     }
 
+    if (!currentJob.taskId) {
+      return redirect(`/projects/${projectId}`);
+    }
+
     const task = await queryWanVideoTask(currentJob.taskId);
 
     await saveVideoJob(projectId, {
@@ -106,6 +127,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       status: task.status,
       videoUrl: task.videoUrl,
       errorMessage: task.errorMessage,
+      attempts: currentJob.attempts + 1,
+      lastPolledAt: new Date().toISOString(),
+      nextPollAt: getNextVideoPollAt(task.status),
       updatedAt: new Date().toISOString(),
     });
 
@@ -113,6 +137,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   throw new Response("Invalid intent", { status: 400 });
+}
+
+function getNextVideoPollAt(status: string): string | undefined {
+  if (status === "QUEUED" || status === "PENDING" || status === "RUNNING" || status === "UNKNOWN") {
+    return new Date(Date.now() + 30_000).toISOString();
+  }
+
+  return undefined;
 }
 
 export function meta() {
@@ -281,13 +313,32 @@ export default function ProjectDetail() {
                       </span>
                     </p>
 
-                    <p className="mt-2 break-all text-xs text-slate-500">
-                      Task ID: {firstSceneVideoJob.taskId}
-                    </p>
+                    {firstSceneVideoJob.taskId ? (
+                      <p className="mt-2 break-all text-xs text-slate-500">
+                        Task ID: {firstSceneVideoJob.taskId}
+                      </p>
+                    ) : null}
+
+                    {firstSceneVideoJob.queueJobId ? (
+                      <p className="mt-2 break-all text-xs text-slate-500">
+                        Queue Job ID: {firstSceneVideoJob.queueJobId}
+                      </p>
+                    ) : null}
 
                     <p className="mt-2 text-xs text-slate-500">
                       Last updated: {new Date(firstSceneVideoJob.updatedAt).toLocaleString()}
                     </p>
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      Poll attempts: {firstSceneVideoJob.attempts}
+                    </p>
+
+                    {firstSceneVideoJob.nextPollAt ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Next worker poll:{" "}
+                        {new Date(firstSceneVideoJob.nextPollAt).toLocaleString()}
+                      </p>
+                    ) : null}
 
                     {firstSceneVideoJob.errorMessage ? (
                       <p className="mt-2 text-sm text-red-300">

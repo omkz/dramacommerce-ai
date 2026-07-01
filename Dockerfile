@@ -16,5 +16,6 @@ ENV NODE_ENV=production
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 COPY --from=build /app/build ./build
+COPY scripts ./scripts
 EXPOSE 3000
 CMD ["pnpm", "run", "start"]

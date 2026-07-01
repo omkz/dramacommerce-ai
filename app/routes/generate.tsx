@@ -1,6 +1,33 @@
 import { Form, useActionData } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 
+type StoryboardScene = {
+  scene: number;
+  duration: string;
+  title: string;
+  visual: string;
+  voiceOver: string;
+  videoPrompt: string;
+};
+
+type ShowPlan = {
+  brief: {
+    productName: string;
+    targetAudience: string;
+    mood: string;
+    platform: string;
+    duration: string;
+    imageName: string;
+  };
+  concept: string;
+  hook: string;
+  voiceOver: string;
+  storyboard: StoryboardScene[];
+  timeline: string[];
+  caption: string;
+  cta: string;
+};
+
 export function meta() {
   return [
     { title: "Generate Product Drama | DramaCommerce AI" },
@@ -14,18 +41,96 @@ export function meta() {
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
 
+  const productName = String(formData.get("productName") || "");
+  const targetAudience = String(formData.get("targetAudience") || "");
+  const mood = String(formData.get("mood") || "");
+  const platform = String(formData.get("platform") || "");
+  const duration = String(formData.get("duration") || "");
   const productImage = formData.get("productImage");
 
+  const imageName =
+    productImage &&
+    typeof productImage === "object" &&
+    "name" in productImage &&
+    typeof productImage.name === "string" &&
+    productImage.name
+      ? productImage.name
+      : "No image uploaded";
+
+  const showPlan = generateMockShowPlan({
+    productName,
+    targetAudience,
+    mood,
+    platform,
+    duration,
+    imageName,
+  });
+
+  return showPlan;
+}
+
+function generateMockShowPlan(brief: ShowPlan["brief"]): ShowPlan {
+  const { productName, targetAudience, mood, platform, duration } = brief;
+
   return {
-    productName: String(formData.get("productName") || ""),
-    targetAudience: String(formData.get("targetAudience") || ""),
-    mood: String(formData.get("mood") || ""),
-    platform: String(formData.get("platform") || ""),
-    duration: String(formData.get("duration") || ""),
-    imageName:
-      productImage instanceof File && productImage.name
-        ? productImage.name
-        : "No image uploaded",
+    brief,
+    concept: `A ${mood.toLowerCase()} short product drama where a busy commuter almost loses confidence before an important moment, then ${productName} becomes the subtle product hero that helps them move with speed, comfort, and style.`,
+    hook: `What if your shoes could change the way your day begins?`,
+    voiceOver: `Every morning starts with pressure. The train is leaving. The meeting is waiting. The city does not slow down. But with ${productName}, every step feels lighter, sharper, and more confident. Move faster. Look sharper. Arrive ready.`,
+    storyboard: [
+      {
+        scene: 1,
+        duration: "0–4s",
+        title: "The rush",
+        visual:
+          "A young professional checks the time, grabs a bag, and rushes out of a small apartment.",
+        voiceOver: "Every morning starts with pressure.",
+        videoPrompt: `Vertical ${platform} video, ${mood.toLowerCase()} lighting, young professional rushing out of apartment, urban morning atmosphere, fast camera movement, realistic commercial style.`,
+      },
+      {
+        scene: 2,
+        duration: "4–8s",
+        title: "Product close-up",
+        visual: `Close-up shot of ${productName} being worn quickly before stepping outside.`,
+        voiceOver: "The city does not slow down.",
+        videoPrompt: `Cinematic close-up of ${productName}, hands tying the shoes, premium product detail shot, shallow depth of field, realistic lighting, vertical video.`,
+      },
+      {
+        scene: 3,
+        duration: "8–16s",
+        title: "City movement",
+        visual:
+          "The character walks fast through a city street, crossing traffic, rain reflections on the road.",
+        voiceOver: "But every step can feel lighter.",
+        videoPrompt: `Urban commuter walking fast through city street, subtle rain reflections, stylish outfit, dynamic tracking shot, ${mood.toLowerCase()} commercial video, vertical frame.`,
+      },
+      {
+        scene: 4,
+        duration: "16–24s",
+        title: "Confidence shift",
+        visual:
+          "The character slows down, breathes, smiles, and enters the building with confidence.",
+        voiceOver: "Sharper. Faster. More confident.",
+        videoPrompt: `Young professional entering modern office building confidently, soft cinematic lighting, emotional shift, product visible but natural, premium ad style.`,
+      },
+      {
+        scene: 5,
+        duration: "24–30s",
+        title: "Hero shot and CTA",
+        visual: `Hero product shot of ${productName} with bold text overlay and clear call-to-action.`,
+        voiceOver: "Move faster. Look sharper. Arrive ready.",
+        videoPrompt: `Hero shot of ${productName}, clean dark background, dramatic light sweep, bold text overlay, premium e-commerce advertisement, vertical ${platform} ending shot.`,
+      },
+    ],
+    timeline: [
+      "0–4s: Hook with character problem",
+      "4–8s: Product close-up",
+      "8–16s: Movement and lifestyle scene",
+      "16–24s: Emotional transformation",
+      "24–30s: Product hero shot and CTA",
+    ],
+    caption: `${productName} for ${targetAudience}. Built for busy days, sharp looks, and confident movement. Perfect for ${platform}.`,
+    cta: "Move faster. Look sharper.",
   };
 }
 
@@ -34,12 +139,12 @@ export default function Generate() {
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <a href="/" className="text-sm text-slate-400 hover:text-white">
           ← Back to home
         </a>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_0.9fr]">
+        <div className="mt-10 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
           <section>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
               DramaCommerce AI
@@ -73,7 +178,7 @@ export default function Generate() {
                   type="text"
                   placeholder="Urban Runner Black Shoes"
                   required
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none ring-0 placeholder:text-slate-500 focus:border-white/30"
+                  className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-white/30"
                 />
               </div>
 
@@ -178,31 +283,111 @@ export default function Generate() {
             </Form>
           </section>
 
-          <aside className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <h2 className="text-xl font-bold">Preview</h2>
-
-            {result ? (
-              <div className="mt-6 space-y-4 text-sm">
-                <PreviewItem label="Product" value={result.productName} />
-                <PreviewItem label="Image" value={result.imageName} />
-                <PreviewItem
-                  label="Audience"
-                  value={result.targetAudience}
-                />
-                <PreviewItem label="Mood" value={result.mood} />
-                <PreviewItem label="Platform" value={result.platform} />
-                <PreviewItem label="Duration" value={result.duration} />
-
-                <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-emerald-200">
-                  Form works. Next step: connect this input to our AI
-                  showrunner pipeline.
-                </div>
+          <aside className="space-y-5">
+            {!result ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                <h2 className="text-xl font-bold">Showrunner output</h2>
+                <p className="mt-4 text-sm leading-6 text-slate-400">
+                  Your generated story concept, storyboard, video prompts,
+                  voice-over, caption, and editing timeline will appear here.
+                </p>
               </div>
             ) : (
-              <p className="mt-4 text-sm leading-6 text-slate-400">
-                Your generated show plan will appear here after submitting the
-                product brief.
-              </p>
+              <>
+                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-5">
+                  <p className="text-sm font-semibold text-emerald-200">
+                    Mock AI pipeline generated successfully.
+                  </p>
+                  <p className="mt-2 text-sm text-emerald-100/80">
+                    Next step: replace this mock generator with Qwen-powered
+                    agents.
+                  </p>
+                </div>
+
+                <ResultCard title="Brief">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SmallItem label="Product" value={result.brief.productName} />
+                    <SmallItem label="Image" value={result.brief.imageName} />
+                    <SmallItem
+                      label="Audience"
+                      value={result.brief.targetAudience}
+                    />
+                    <SmallItem label="Mood" value={result.brief.mood} />
+                    <SmallItem label="Platform" value={result.brief.platform} />
+                    <SmallItem label="Duration" value={result.brief.duration} />
+                  </div>
+                </ResultCard>
+
+                <ResultCard title="Story Concept">
+                  <p className="text-slate-300">{result.concept}</p>
+                </ResultCard>
+
+                <ResultCard title="Hook">
+                  <p className="text-2xl font-bold leading-snug">
+                    “{result.hook}”
+                  </p>
+                </ResultCard>
+
+                <ResultCard title="Voice-over">
+                  <p className="leading-7 text-slate-300">{result.voiceOver}</p>
+                </ResultCard>
+
+                <ResultCard title="Storyboard">
+                  <div className="space-y-4">
+                    {result.storyboard.map((scene) => (
+                      <div
+                        key={scene.scene}
+                        className="rounded-xl border border-white/10 bg-slate-900 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">
+                              Scene {scene.scene} · {scene.duration}
+                            </p>
+                            <h3 className="mt-1 font-bold">{scene.title}</h3>
+                          </div>
+                        </div>
+
+                        <p className="mt-3 text-sm leading-6 text-slate-300">
+                          {scene.visual}
+                        </p>
+
+                        <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm text-slate-300">
+                          <span className="font-semibold text-white">
+                            Voice-over:
+                          </span>{" "}
+                          {scene.voiceOver}
+                        </p>
+
+                        <p className="mt-3 rounded-lg bg-indigo-400/10 p-3 text-sm leading-6 text-indigo-100">
+                          <span className="font-semibold text-white">
+                            Video prompt:
+                          </span>{" "}
+                          {scene.videoPrompt}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </ResultCard>
+
+                <ResultCard title="Editing Timeline">
+                  <ol className="space-y-3">
+                    {result.timeline.map((item) => (
+                      <li
+                        key={item}
+                        className="rounded-xl border border-white/10 bg-slate-900 p-4 text-sm text-slate-300"
+                      >
+                        {item}
+                      </li>
+                    ))}
+                  </ol>
+                </ResultCard>
+
+                <ResultCard title="Social Caption">
+                  <p className="leading-7 text-slate-300">{result.caption}</p>
+                  <p className="mt-4 text-lg font-bold">{result.cta}</p>
+                </ResultCard>
+              </>
             )}
           </aside>
         </div>
@@ -211,11 +396,26 @@ export default function Generate() {
   );
 }
 
-function PreviewItem({ label, value }: { label: string; value: string }) {
+function ResultCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+      <h2 className="text-xl font-bold">{title}</h2>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function SmallItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-slate-900 p-4">
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 font-medium text-slate-100">{value}</p>
+      <p className="mt-1 text-sm font-medium text-slate-100">{value}</p>
     </div>
   );
 }

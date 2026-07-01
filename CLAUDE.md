@@ -37,7 +37,7 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
    - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a Wan-ready `videoPrompt` per scene)
    - `agents/editor-agent.server.ts` — storyboard → `EditorPackage` (timeline, caption, CTA)
 3. Failures bubble to the `/generate` action, which shows an error instead of saving a project.
-4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for scene 1 only (`intent=create-video-task` / `intent=refresh-video-task` form actions call `services/wan-video.server.ts`, and job state is stored via `services/project-store.server.ts#saveVideoJob`). Only scene 1 gets a video job by design, to keep the MVP cheap and predictable.
+4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for scene 1 only (`intent=create-video-task` / `intent=refresh-video-task` form actions call `services/wan-video.server.ts`, and job state is stored via `services/project-store.server.ts#saveVideoJob`). Only scene 1 gets a video job in the current product flow to keep generation cost predictable; queued multi-scene generation is the production roadmap.
 
 ### Storage
 

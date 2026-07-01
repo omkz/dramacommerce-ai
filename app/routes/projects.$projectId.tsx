@@ -256,7 +256,8 @@ export default function ProjectDetail() {
               <div className="space-y-4">
                 <p className="text-sm leading-6 text-slate-300">
                   Generate a real video clip from Scene 1 using Wan text-to-video.
-                  This keeps the MVP cheap and predictable before generating all scenes.
+                  This keeps generation cost predictable before queued multi-scene
+                  generation is enabled.
                 </p>
 
                 {firstSceneVideoJob?.videoUrl ? (

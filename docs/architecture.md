@@ -29,7 +29,7 @@ Each stage returns structured JSON and validates it through `showrunner-validato
 
 ## Video Pipeline
 
-The MVP generates one real video clip first:
+The initial production flow generates one real video clip first:
 
 ```text
 Scene 1 videoPrompt
@@ -43,4 +43,4 @@ queryWanVideoTask()
 show video_url in /projects/:id
 ```
 
-This proves the creative pipeline without spending credits on all five scenes.
+This keeps generation cost predictable while proving the creative pipeline. The production roadmap is to queue and generate additional scenes asynchronously.

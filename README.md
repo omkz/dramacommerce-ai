@@ -60,9 +60,9 @@ pnpm run build
 pnpm run start
 ```
 
-## Hackathon Track
+## Product Direction
 
-This project targets the Qwen Cloud hackathon **Track 2: AI Showrunner**. The showrunner pipeline is split into Qwen-powered Story, Director, Prompt, and Editor agents before creating a Wan text-to-video task for Scene 1. See `docs/architecture.md` and `docs/hackathon-submission.md` for the architecture and submission checklist.
+DramaCommerce AI is designed as a production-ready creative operations tool for merchants. The current product flow proves the core path: Qwen multi-agent planning, persisted projects, and Wan video generation for the first scene. See `docs/architecture.md` for system design and `docs/operations.md` for production readiness notes.
 
 ## Docker
 
@@ -71,7 +71,7 @@ docker build -t dramacommerce-ai .
 docker run --env-file .env -p 3000:3000 dramacommerce-ai
 ```
 
-## MVP Flow
+## Product Flow
 
 1. Open `/generate`.
 2. Upload a product image and submit a product brief.
@@ -83,4 +83,4 @@ docker run --env-file .env -p 3000:3000 dramacommerce-ai
 
 ## Deployment Notes
 
-For the hackathon, deploy this as a Docker container on Alibaba Cloud ECS. Keep the container simple for the MVP, then move `data/` and `uploads/` to Alibaba OSS/RDS later if needed.
+Deploy this as a Docker container on Alibaba Cloud ECS for the first production target. For durable production use, mount persistent storage for `data/` and `uploads/`, then migrate media to Alibaba OSS and project data to a managed database as traffic grows.

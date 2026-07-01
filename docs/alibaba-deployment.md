@@ -2,7 +2,7 @@
 
 ## 1. Prepare ECS
 
-Use a small ECS instance with Docker installed. Open inbound port `80` or `3000` for the demo.
+Use an ECS instance with Docker installed. Open inbound port `80` or `3000`, or place the app behind a reverse proxy with TLS.
 
 ## 2. Clone and configure
 
@@ -36,15 +36,18 @@ Open:
 http://YOUR_ECS_PUBLIC_IP:3000
 ```
 
-## 4. Hackathon proof
+## 4. Production checks
 
-For Devpost, include:
+- Store `.env` as server-side secrets and do not commit it.
+- Mount persistent volumes for `data/` and `uploads/` if using local storage.
+- Put the app behind HTTPS before using it with real merchant data.
+- Configure log collection for Qwen, Wan, upload, and storage errors.
+- Back up `data/app.db` until project storage is moved to a managed database.
 
-- ECS public URL or screen recording
-- this repository link
-- this deployment doc
-- screenshots of the app calling Qwen and creating a Wan video task
+## 5. Hackathon proof
 
-## 5. MVP caveat
+For Devpost, include the ECS URL or screen recording, this repository link, this deployment doc, and screenshots of the app calling Qwen and creating a Wan video task.
 
-`data/` and `uploads/` are local to the ECS container filesystem. This is acceptable for a hackathon MVP, but production should move images/videos to Alibaba OSS and project data to a database.
+## 6. Storage roadmap
+
+`data/` and `uploads/` are local to the ECS container filesystem by default. This is acceptable for the first deploy when backed by persistent volumes. For production scale, move images and generated videos to Alibaba OSS and project data to a managed database.

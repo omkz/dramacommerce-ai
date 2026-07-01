@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
-import { Link, useLoaderData } from "react-router";
-import type { LoaderFunctionArgs } from "react-router";
-import { getProject } from "~/services/project-store.server";
+import { Form, Link, redirect, useLoaderData } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import {
+  getProject,
+  saveVideoJob,
+} from "~/services/project-store.server";
+import {
+  createWanTextToVideoTask,
+  queryWanVideoTask,
+} from "~/services/wan-video.server";
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const projectId = params.projectId;
@@ -19,6 +26,72 @@ export async function loader({ params }: LoaderFunctionArgs) {
   return project;
 }
 
+export async function action({ request, params }: ActionFunctionArgs) {
+  const projectId = params.projectId;
+
+  if (!projectId) {
+    throw new Response("Project ID is required", { status: 400 });
+  }
+
+  const project = await getProject(projectId);
+
+  if (!project) {
+    throw new Response("Project not found", { status: 404 });
+  }
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") || "");
+  const sceneNumber = Number(formData.get("scene") || "1");
+
+  const scene = project.showPlan.storyboard.find(
+    (item) => item.scene === sceneNumber,
+  );
+
+  if (!scene) {
+    throw new Response("Scene not found", { status: 404 });
+  }
+
+  if (intent === "create-video-task") {
+    const task = await createWanTextToVideoTask(scene.videoPrompt);
+    const now = new Date().toISOString();
+
+    await saveVideoJob(projectId, {
+      scene: scene.scene,
+      taskId: task.taskId,
+      status: task.status,
+      prompt: scene.videoPrompt,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return redirect(`/projects/${projectId}`);
+  }
+
+  if (intent === "refresh-video-task") {
+    const currentJob = project.videoJobs?.find(
+      (job) => job.scene === scene.scene,
+    );
+
+    if (!currentJob) {
+      throw new Response("Video task not found", { status: 404 });
+    }
+
+    const task = await queryWanVideoTask(currentJob.taskId);
+
+    await saveVideoJob(projectId, {
+      ...currentJob,
+      status: task.status,
+      videoUrl: task.videoUrl,
+      errorMessage: task.errorMessage,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return redirect(`/projects/${projectId}`);
+  }
+
+  throw new Response("Invalid intent", { status: 400 });
+}
+
 export function meta() {
   return [
     { title: "Generated Project | DramaCommerce AI" },
@@ -32,6 +105,10 @@ export function meta() {
 export default function ProjectDetail() {
   const project = useLoaderData<typeof loader>();
   const result = project.showPlan;
+  const firstScene = result.storyboard[0];
+  const firstSceneVideoJob = project.videoJobs?.find(
+    (job) => job.scene === firstScene?.scene,
+  );
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -68,7 +145,6 @@ export default function ProjectDetail() {
               />
             </div>
           ) : null}
-
         </section>
 
         <section className="mt-8 space-y-5">
@@ -126,6 +202,81 @@ export default function ProjectDetail() {
           <ResultCard title="Voice-over">
             <p className="leading-7 text-slate-300">{result.voiceOver}</p>
           </ResultCard>
+
+          {firstScene ? (
+            <ResultCard title="Generated Video Clip">
+              <div className="space-y-4">
+                <p className="text-sm leading-6 text-slate-300">
+                  Generate a real video clip from Scene 1 using Wan text-to-video.
+                  This keeps the MVP cheap and predictable before generating all scenes.
+                </p>
+
+                {firstSceneVideoJob?.videoUrl ? (
+                  <video
+                    src={firstSceneVideoJob.videoUrl}
+                    controls
+                    className="w-full rounded-xl border border-white/10 bg-black"
+                  />
+                ) : null}
+
+                {firstSceneVideoJob ? (
+                  <div className="rounded-xl border border-white/10 bg-slate-900 p-4">
+                    <p className="text-sm text-slate-300">
+                      Status:{" "}
+                      <span className="font-semibold text-white">
+                        {firstSceneVideoJob.status}
+                      </span>
+                    </p>
+
+                    <p className="mt-2 break-all text-xs text-slate-500">
+                      Task ID: {firstSceneVideoJob.taskId}
+                    </p>
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      Last updated: {new Date(firstSceneVideoJob.updatedAt).toLocaleString()}
+                    </p>
+
+                    {firstSceneVideoJob.errorMessage ? (
+                      <p className="mt-2 text-sm text-red-300">
+                        {firstSceneVideoJob.errorMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-3">
+                  {!firstSceneVideoJob ? (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="create-video-task" />
+                      <input type="hidden" name="scene" value={firstScene.scene} />
+                      <button
+                        type="submit"
+                        className="rounded-xl bg-white px-5 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
+                      >
+                        Generate Video for Scene 1
+                      </button>
+                    </Form>
+                  ) : (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="refresh-video-task" />
+                      <input type="hidden" name="scene" value={firstScene.scene} />
+                      <button
+                        type="submit"
+                        className="rounded-xl border border-white/15 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
+                      >
+                        Refresh Video Status
+                      </button>
+                    </Form>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-indigo-400/10 p-4 text-sm leading-6 text-indigo-100">
+                  <span className="font-semibold text-white">Scene 1 prompt:</span>{" "}
+                  {firstScene.videoPrompt}
+                </div>
+              </div>
+            </ResultCard>
+          ) : null}
 
           <ResultCard title="Storyboard">
             <div className="space-y-4">

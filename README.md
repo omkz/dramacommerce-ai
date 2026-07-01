@@ -1,87 +1,82 @@
-# Welcome to React Router!
+# DramaCommerce AI
 
-A modern, production-ready template for building full-stack React applications using React Router.
-
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a first real video clip using Qwen/Wan on Alibaba Cloud.
 
 ## Features
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+- Product brief form with image upload
+- Qwen-powered showrunner planning with mock fallback
+- Structured 5-scene storyboard and editing timeline
+- Local project persistence in `data/projects.json`
+- Local image storage in `uploads/`
+- Wan text-to-video task creation for Scene 1
+- Manual video task polling and video preview
+- Dockerfile ready for Alibaba Cloud ECS
 
-## Getting Started
+## Tech Stack
 
-### Installation
+- React Router 8
+- React 19
+- Tailwind CSS 4
+- TypeScript
+- Qwen / Alibaba Cloud Model Studio compatible chat API
+- Wan / DashScope video generation API
+- Local JSON file storage for the MVP
 
-Install the dependencies:
-
-```bash
-npm install
-```
-
-### Development
-
-Start the development server with HMR:
-
-```bash
-npm run dev
-```
-
-Your application will be available at `http://localhost:5173`.
-
-## Building for Production
-
-Create a production build:
+## Local Setup
 
 ```bash
-npm run build
+pnpm install
+cp .env.example .env
+pnpm dev
 ```
 
-## Deployment
+Open `http://localhost:5173`.
 
-### Docker Deployment
+## Environment Variables
 
-To build and run using Docker:
+```env
+DASHSCOPE_API_KEY=sk-xxxxx
+QWEN_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen-plus
+
+DASHSCOPE_VIDEO_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com
+WAN_VIDEO_MODEL=wan2.1-t2v-turbo
+WAN_VIDEO_RESOLUTION=720P
+WAN_VIDEO_RATIO=9:16
+WAN_VIDEO_DURATION=5
+```
+
+`QWEN_BASE_URL` includes `/compatible-mode/v1` because it is used for OpenAI-compatible chat completions.
+
+`DASHSCOPE_VIDEO_BASE_URL` does not include `/compatible-mode/v1` because the Wan video API uses `/api/v1/services/...` and `/api/v1/tasks/...`.
+
+## Development Commands
 
 ```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
+pnpm dev
+pnpm run typecheck
+pnpm run build
+pnpm run start
 ```
 
-The containerized application can be deployed to any platform that supports Docker, including:
+## Docker
 
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
+```bash
+docker build -t dramacommerce-ai .
+docker run --env-file .env -p 3000:3000 dramacommerce-ai
 ```
 
-## Styling
+## MVP Flow
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
+1. Open `/generate`.
+2. Upload a product image and submit a product brief.
+3. The app generates a showrunner plan using Qwen. If Qwen fails, it falls back to a mock plan.
+4. The result is saved as a project and shown at `/projects/:id`.
+5. Click **Generate Video for Scene 1**.
+6. Click **Refresh Video Status** until the Wan task succeeds.
+7. The generated video appears in the project page.
 
----
+## Deployment Notes
 
-Built with ❤️ using React Router.
+For the hackathon, deploy this as a Docker container on Alibaba Cloud ECS. Keep the container simple for the MVP, then move `data/` and `uploads/` to Alibaba OSS/RDS later if needed.

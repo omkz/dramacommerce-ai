@@ -29,6 +29,7 @@ WAN_VIDEO_MODEL=wan2.1-t2v-turbo
 
 ```bash
 docker build -t dramacommerce-ai .
+docker run --rm --env-file .env dramacommerce-ai pnpm run db:migrate
 docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 dramacommerce-ai
 docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce-ai pnpm run worker:video
 ```

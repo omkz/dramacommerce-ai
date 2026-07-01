@@ -20,8 +20,6 @@ const pool = new pg.Pool({ connectionString: databaseUrl });
 const connection = getRedisConnection(redisUrl);
 const queue = new Queue(VIDEO_QUEUE_NAME, { connection });
 
-await ensureDatabaseSchema();
-
 const worker = new Worker(
   VIDEO_QUEUE_NAME,
   async (job) => {
@@ -215,34 +213,6 @@ async function queryWanVideoTask(taskId) {
     videoUrl: output.video_url,
     errorMessage: output.message,
   };
-}
-
-async function ensureDatabaseSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      created_at TIMESTAMPTZ NOT NULL,
-      show_plan JSONB NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS video_jobs (
-      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      scene INTEGER NOT NULL,
-      provider TEXT NOT NULL DEFAULT 'wan',
-      queue_job_id TEXT,
-      task_id TEXT,
-      status TEXT NOT NULL,
-      prompt TEXT NOT NULL,
-      attempts INTEGER NOT NULL DEFAULT 0,
-      video_url TEXT,
-      error_message TEXT,
-      last_polled_at TIMESTAMPTZ,
-      next_poll_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL,
-      PRIMARY KEY (project_id, scene)
-    );
-  `);
 }
 
 function getNextPollAt(status) {

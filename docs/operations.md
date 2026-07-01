@@ -33,6 +33,12 @@ Keep `.env` server-side only. Do not expose these values to client bundles or co
 
 The current deployment stores projects and video job metadata in Postgres. Uploaded images are still stored in `uploads/`; mount this path on persistent storage until media is moved to object storage.
 
+Run database migrations before starting the web or worker processes:
+
+```bash
+pnpm run db:migrate
+```
+
 Production storage roadmap:
 
 - Move uploaded product images and generated video assets to Alibaba OSS.

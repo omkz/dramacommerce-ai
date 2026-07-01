@@ -61,6 +61,8 @@ WAN_VIDEO_DURATION=5
 
 ```bash
 pnpm dev
+pnpm run db:generate
+pnpm run db:migrate
 pnpm run worker:video
 pnpm run typecheck
 pnpm run build

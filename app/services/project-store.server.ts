@@ -1,4 +1,6 @@
-import { ensureDatabaseSchema, pool } from "~/services/db.server";
+import { desc, eq } from "drizzle-orm";
+import { projects, videoJobs } from "~/db/schema";
+import { db } from "~/services/db.server";
 import type { VideoGenerationStatus } from "~/services/wan-video.server";
 import type { ShowPlan } from "~/types/showrunner";
 
@@ -25,62 +27,30 @@ export type SavedProject = {
   videoJobs?: VideoGenerationJob[];
 };
 
-type ProjectRow = {
-  id: string;
-  created_at: Date | string;
-  show_plan: ShowPlan;
-};
-
-type VideoJobRow = {
-  scene: number;
-  task_id: string | null;
-  queue_job_id: string | null;
-  provider: string;
-  status: string;
-  prompt: string;
-  attempts: number;
-  video_url: string | null;
-  error_message: string | null;
-  last_polled_at: Date | string | null;
-  next_poll_at: Date | string | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
-
 export async function saveProject(showPlan: ShowPlan): Promise<SavedProject> {
-  await ensureDatabaseSchema();
-
   const project: SavedProject = {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     showPlan,
   };
 
-  await pool.query(
-    "INSERT INTO projects (id, created_at, show_plan) VALUES ($1, $2, $3)",
-    [project.id, project.createdAt, JSON.stringify(project.showPlan)],
-  );
+  await db.insert(projects).values({
+    id: project.id,
+    createdAt: new Date(project.createdAt),
+    showPlan: project.showPlan,
+  });
 
   return project;
 }
 
 export async function listProjects(): Promise<SavedProject[]> {
-  await ensureDatabaseSchema();
-
-  const { rows } = await pool.query<ProjectRow>(
-    "SELECT id, created_at, show_plan FROM projects ORDER BY created_at DESC",
-  );
+  const rows = await db.select().from(projects).orderBy(desc(projects.createdAt));
 
   return Promise.all(rows.map(rowToProject));
 }
 
 export async function getProject(id: string): Promise<SavedProject | null> {
-  await ensureDatabaseSchema();
-
-  const { rows } = await pool.query<ProjectRow>(
-    "SELECT id, created_at, show_plan FROM projects WHERE id = $1",
-    [id],
-  );
+  const rows = await db.select().from(projects).where(eq(projects.id, id));
 
   if (!rows[0]) {
     return null;
@@ -93,100 +63,77 @@ export async function saveVideoJob(
   projectId: string,
   job: VideoGenerationJob,
 ): Promise<SavedProject> {
-  await ensureDatabaseSchema();
-
-  await pool.query(
-    `
-    INSERT INTO video_jobs
-      (
-        project_id,
-        scene,
-        provider,
-        queue_job_id,
-        task_id,
-        status,
-        prompt,
-        attempts,
-        video_url,
-        error_message,
-        last_polled_at,
-        next_poll_at,
-        created_at,
-        updated_at
-      )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-    ON CONFLICT (project_id, scene) DO UPDATE SET
-      provider = excluded.provider,
-      queue_job_id = excluded.queue_job_id,
-      task_id = excluded.task_id,
-      status = excluded.status,
-      prompt = excluded.prompt,
-      attempts = excluded.attempts,
-      video_url = excluded.video_url,
-      error_message = excluded.error_message,
-      last_polled_at = excluded.last_polled_at,
-      next_poll_at = excluded.next_poll_at,
-      updated_at = excluded.updated_at
-  `,
-    [
+  await db
+    .insert(videoJobs)
+    .values({
       projectId,
-      job.scene,
-      job.provider,
-      job.queueJobId ?? null,
-      job.taskId ?? null,
-      job.status,
-      job.prompt,
-      job.attempts,
-      job.videoUrl ?? null,
-      job.errorMessage ?? null,
-      job.lastPolledAt ?? null,
-      job.nextPollAt ?? null,
-      job.createdAt,
-      job.updatedAt,
-    ],
-  );
+      scene: job.scene,
+      provider: job.provider,
+      queueJobId: job.queueJobId,
+      taskId: job.taskId,
+      status: job.status,
+      prompt: job.prompt,
+      attempts: job.attempts,
+      videoUrl: job.videoUrl,
+      errorMessage: job.errorMessage,
+      lastPolledAt: job.lastPolledAt ? new Date(job.lastPolledAt) : undefined,
+      nextPollAt: job.nextPollAt ? new Date(job.nextPollAt) : undefined,
+      createdAt: new Date(job.createdAt),
+      updatedAt: new Date(job.updatedAt),
+    })
+    .onConflictDoUpdate({
+      target: [videoJobs.projectId, videoJobs.scene],
+      set: {
+        provider: job.provider,
+        queueJobId: job.queueJobId,
+        taskId: job.taskId,
+        status: job.status,
+        prompt: job.prompt,
+        attempts: job.attempts,
+        videoUrl: job.videoUrl,
+        errorMessage: job.errorMessage,
+        lastPolledAt: job.lastPolledAt ? new Date(job.lastPolledAt) : null,
+        nextPollAt: job.nextPollAt ? new Date(job.nextPollAt) : null,
+        updatedAt: new Date(job.updatedAt),
+      },
+    });
 
   return (await getProject(projectId)) as SavedProject;
 }
 
-async function rowToProject(row: ProjectRow): Promise<SavedProject> {
+async function rowToProject(row: typeof projects.$inferSelect): Promise<SavedProject> {
   return {
     id: row.id,
-    createdAt: toIsoString(row.created_at),
-    showPlan: row.show_plan,
+    createdAt: row.createdAt.toISOString(),
+    showPlan: row.showPlan,
     videoJobs: await getVideoJobs(row.id),
   };
 }
 
 async function getVideoJobs(projectId: string): Promise<VideoGenerationJob[]> {
-  const { rows } = await pool.query<VideoJobRow>(
-    "SELECT * FROM video_jobs WHERE project_id = $1 ORDER BY scene ASC",
-    [projectId],
-  );
+  const rows = await db
+    .select()
+    .from(videoJobs)
+    .where(eq(videoJobs.projectId, projectId))
+    .orderBy(videoJobs.scene);
 
   return rows.map(rowToVideoJob);
 }
 
-function rowToVideoJob(row: VideoJobRow): VideoGenerationJob {
+function rowToVideoJob(row: typeof videoJobs.$inferSelect): VideoGenerationJob {
   return {
     scene: row.scene,
-    taskId: row.task_id ?? undefined,
-    queueJobId: row.queue_job_id ?? undefined,
+    taskId: row.taskId ?? undefined,
+    queueJobId: row.queueJobId ?? undefined,
     provider: "wan",
     status: row.status as VideoGenerationStatus,
     prompt: row.prompt,
     attempts: row.attempts,
-    videoUrl: row.video_url ?? undefined,
-    errorMessage: row.error_message ?? undefined,
-    lastPolledAt: row.last_polled_at
-      ? toIsoString(row.last_polled_at)
-      : undefined,
-    nextPollAt: row.next_poll_at ? toIsoString(row.next_poll_at) : undefined,
-    createdAt: toIsoString(row.created_at),
-    updatedAt: toIsoString(row.updated_at),
+    videoUrl: row.videoUrl ?? undefined,
+    errorMessage: row.errorMessage ?? undefined,
+    lastPolledAt: row.lastPolledAt?.toISOString(),
+    nextPollAt: row.nextPollAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-function toIsoString(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

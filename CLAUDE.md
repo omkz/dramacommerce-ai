@@ -41,7 +41,7 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
 
 ### Storage
 
-`services/project-store.server.ts` persists projects and video jobs to Postgres through `services/db.server.ts`. `projects.show_plan` is stored as JSONB, and `video_jobs` stores provider, queue job ID, Wan task ID, status, attempts, polling timestamps, output URL, and error metadata. Uploaded images are written to `uploads/` on local disk and served back through `routes/uploads.$filename.tsx`, which guards against path traversal by rejecting filenames containing `/` or `..`. `uploads/` is gitignored and should move to OSS for production scale.
+`services/project-store.server.ts` persists projects and video jobs to Postgres through Drizzle (`app/db/schema.ts`, `services/db.server.ts`). Migrations live in `drizzle/` and should be applied with `pnpm run db:migrate` before starting web or worker processes. `projects.show_plan` is stored as JSONB, and `video_jobs` stores provider, queue job ID, Wan task ID, status, attempts, polling timestamps, output URL, and error metadata. Uploaded images are written to `uploads/` on local disk and served back through `routes/uploads.$filename.tsx`, which guards against path traversal by rejecting filenames containing `/` or `..`. `uploads/` is gitignored and should move to OSS for production scale.
 
 ### Types
 

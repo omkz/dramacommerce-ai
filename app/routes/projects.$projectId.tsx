@@ -120,7 +120,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     for (const scene of scenesToCreate) {
       try {
-        await createVideoJobForScene(projectId, user.id, scene);
+        await createVideoJobForScene(
+          projectId,
+          user.id,
+          project.showPlan.brief.imageUrl,
+          scene,
+        );
       } catch (error) {
         console.error(`Failed to enqueue video job for scene ${scene.scene}:`, error);
         failures.push(scene.scene);
@@ -202,6 +207,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       await createVideoJobForScene(
         projectId,
         user.id,
+        project.showPlan.brief.imageUrl,
         scene,
         promptOverride || undefined,
       );
@@ -261,6 +267,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 async function createVideoJobForScene(
   projectId: string,
   userId: string,
+  productImageUrl: string | undefined,
   scene: StoryboardScene,
   promptOverride?: string,
 ): Promise<SavedProject> {
@@ -271,6 +278,7 @@ async function createVideoJobForScene(
     scene: scene.scene,
     prompt,
     voiceOver: scene.voiceOver,
+    productImageUrl,
   });
 
   const now = new Date().toISOString();

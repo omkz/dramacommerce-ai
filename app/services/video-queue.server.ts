@@ -5,6 +5,7 @@ export type VideoCreateJobData = {
   scene: number;
   prompt: string;
   voiceOver: string;
+  productImageUrl?: string;
 };
 
 export type VideoPollJobData = {
@@ -12,6 +13,7 @@ export type VideoPollJobData = {
   scene: number;
   taskId: string;
   voiceOver: string;
+  productImageUrl?: string;
 };
 
 export type VideoStitchJobData = {

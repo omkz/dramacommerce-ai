@@ -67,7 +67,7 @@ console.log(
   `Video worker started. Queue: ${VIDEO_QUEUE_NAME}. Concurrency: ${CONCURRENCY}.`,
 );
 
-async function createWanTask({ projectId, scene, prompt, voiceOver }) {
+async function createWanTask({ projectId, scene, prompt, voiceOver, productImageUrl }) {
   const task = await createWanTextToVideoTask(prompt);
   const now = new Date().toISOString();
   const nextPollAt = new Date(Date.now() + POLL_DELAY_MS).toISOString();
@@ -87,7 +87,7 @@ async function createWanTask({ projectId, scene, prompt, voiceOver }) {
 
   await queue.add(
     "video.poll",
-    { projectId, scene, taskId: task.taskId, voiceOver },
+    { projectId, scene, taskId: task.taskId, voiceOver, productImageUrl },
     {
       delay: POLL_DELAY_MS,
       attempts: 10,
@@ -98,7 +98,7 @@ async function createWanTask({ projectId, scene, prompt, voiceOver }) {
   );
 }
 
-async function pollWanTask({ projectId, scene, taskId, voiceOver }) {
+async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUrl }) {
   const task = await queryWanVideoTask(taskId);
   const now = new Date().toISOString();
   const nextPollAt = getNextPollAt(task.status);
@@ -107,7 +107,13 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver }) {
 
   if (task.status === "SUCCEEDED" && videoUrl) {
     try {
-      videoUrl = await narrateAndMuxScene(videoUrl, voiceOver, projectId, scene);
+      videoUrl = await narrateAndMuxScene(
+        videoUrl,
+        voiceOver,
+        productImageUrl,
+        projectId,
+        scene,
+      );
     } catch (error) {
       console.error(
         `Voice-over synthesis/mux failed for project ${projectId} scene ${scene}, keeping silent clip:`,
@@ -143,7 +149,7 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver }) {
   if (nextPollAt) {
     await queue.add(
       "video.poll",
-      { projectId, scene, taskId, voiceOver },
+      { projectId, scene, taskId, voiceOver, productImageUrl },
       {
         delay: POLL_DELAY_MS,
         attempts: 10,
@@ -155,7 +161,7 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver }) {
   }
 }
 
-async function narrateAndMuxScene(videoUrl, voiceOver, projectId, scene) {
+async function narrateAndMuxScene(videoUrl, voiceOver, productImageUrl, projectId, scene) {
   const tempDir = path.join(os.tmpdir(), `dramacommerce-narrate-${projectId}-${scene}`);
 
   try {
@@ -163,6 +169,9 @@ async function narrateAndMuxScene(videoUrl, voiceOver, projectId, scene) {
 
     const videoPath = path.join(tempDir, "video.mp4");
     const audioPath = path.join(tempDir, "audio.mp3");
+    const productImagePath = productImageUrl
+      ? path.join(tempDir, "product-image" + path.extname(productImageUrl))
+      : null;
 
     // Downloading the Wan clip and synthesizing the voice-over are
     // independent — run them concurrently instead of waiting on TTS
@@ -174,9 +183,20 @@ async function narrateAndMuxScene(videoUrl, voiceOver, projectId, scene) {
 
     await downloadFile(audioUrl, audioPath);
 
+    if (productImageUrl && productImagePath) {
+      await downloadFile(productImageUrl, productImagePath);
+    }
+
     const outputFilename = `${randomUUID()}.mp4`;
+    const muxedOutputPath = path.join(tempDir, `muxed-${outputFilename}`);
     const tempOutputPath = path.join(tempDir, outputFilename);
-    await muxVideoWithAudio(videoPath, audioPath, tempOutputPath);
+    await muxVideoWithAudio(videoPath, audioPath, muxedOutputPath);
+
+    if (productImagePath) {
+      await overlayProductImage(muxedOutputPath, productImagePath, tempOutputPath);
+    } else {
+      await copyFile(muxedOutputPath, tempOutputPath);
+    }
 
     await mkdir(UPLOAD_DIR, { recursive: true });
     await copyFile(tempOutputPath, path.join(UPLOAD_DIR, outputFilename));
@@ -208,6 +228,31 @@ async function muxVideoWithAudio(videoPath, audioPath, outputPath) {
     "-af",
     "apad",
     "-shortest",
+    outputPath,
+  ]);
+}
+
+async function overlayProductImage(videoPath, productImagePath, outputPath) {
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i",
+    videoPath,
+    "-i",
+    productImagePath,
+    "-filter_complex",
+    "[1:v]scale=220:-1:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=0.92[product];[0:v][product]overlay=W-w-28:H-h-28:format=auto[v]",
+    "-map",
+    "[v]",
+    "-map",
+    "0:a?",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-c:a",
+    "copy",
+    "-movflags",
+    "+faststart",
     outputPath,
   ]);
 }

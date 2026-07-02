@@ -31,16 +31,16 @@ export default function ProjectsIndex() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
-              The Archive
+              Project Library
             </p>
 
             <h1 className="mt-3 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
-              Productions
+              Product Drama Ads
             </h1>
 
             <p className="mt-4 max-w-2xl text-ash">
-              Every drama ad your account has produced, ready to review or
-              rerelease.
+              Every product ad your account has generated, ready to review,
+              render, stitch, or reuse.
             </p>
           </div>
 
@@ -48,14 +48,14 @@ export default function ProjectsIndex() {
             to="/generate"
             className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
-            Start a Production
+            Create Product Ad
           </Link>
         </div>
 
         {projects.length === 0 ? (
           <section className="mt-10 rounded-lg border border-paper/10 bg-panel p-10 text-center">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-ash">
-              Empty Slate
+              Empty Library
             </p>
             <h2 className="mt-3 font-display text-2xl font-medium text-bone">
               No productions yet
@@ -68,7 +68,7 @@ export default function ProjectsIndex() {
               to="/generate"
               className="mt-6 inline-flex rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
             >
-              Start a Production
+              Create Product Ad
             </Link>
           </section>
         ) : (

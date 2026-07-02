@@ -141,12 +141,12 @@ docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce
 ## Product Flow
 
 1. Open `/generate`.
-2. Upload a product image and submit a product brief.
+2. Upload a product image and submit a product brief with audience, benefits, offer, platform, mood, and duration.
 3. The app generates a showrunner plan using Qwen. If Qwen is unavailable, generation fails without creating a mock project.
 4. The result is saved as a project and shown at `/projects/:id`.
-5. Click **Generate Video for Scene 1**.
-6. Click **Refresh Video Status** until the Wan task succeeds.
-7. The generated video appears in the project page.
+5. Click **Generate 5 Scene Videos** or generate an individual scene.
+6. The project page auto-refreshes scene and final-video status while Wan jobs are in progress.
+7. Once all scene videos succeed, click **Stitch Final Ad** to create the downloadable product drama ad.
 
 ## Deployment Notes
 
@@ -160,4 +160,4 @@ Production checklist:
 - Back up the Postgres database.
 - Configure log collection for Qwen, Wan, upload, worker, and storage errors.
 - Move uploaded product images and generated video assets to Alibaba OSS as usage grows.
-- Use `/health` for uptime checks; it returns `200` when Postgres and Redis are reachable and `503` when either dependency fails.
+- Use `/health` for uptime checks; it returns `200` when Postgres, Redis, required environment variables, and `ffmpeg` are ready, and `503` when a dependency fails.

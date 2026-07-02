@@ -398,7 +398,7 @@ export default function ProjectDetail() {
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Link to="/generate" className="text-sm text-ash hover:text-bone">
-            ← Start another production
+            ← Create another ad
           </Link>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -409,7 +409,7 @@ export default function ProjectDetail() {
             {shouldAutoRefresh ? (
               <p className="inline-flex items-center gap-2 rounded-full border border-paper/15 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-ash">
                 <span className="tally-dot h-1.5 w-1.5 rounded-full bg-flame" aria-hidden />
-                {revalidator.state === "loading" ? "Updating status" : "Auto status on"}
+                {revalidator.state === "loading" ? "Checking status" : "Auto-refresh on"}
               </p>
             ) : null}
 
@@ -439,7 +439,7 @@ export default function ProjectDetail() {
 
         <section className="mt-10">
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
-            Now Filming
+            Product Ad Project
           </p>
 
           <h1 className="mt-4 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
@@ -515,7 +515,7 @@ export default function ProjectDetail() {
             </div>
           </ResultCard>
 
-          <ResultCard title="Brief" eyebrow="Call Sheet">
+          <ResultCard title="Product Brief" eyebrow="Inputs">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <SmallItem label="Product" value={result.brief.productName} />
               <SmallItem label="Image" value={result.brief.imageName} />
@@ -570,11 +570,11 @@ export default function ProjectDetail() {
             </p>
           ) : null}
 
-          <ResultCard title="Final Drama Ad" eyebrow="Premiere" accent>
+          <ResultCard title="Final Product Drama Ad" eyebrow="Output" accent>
             <div className="space-y-4">
               <p className="text-sm leading-6 text-ash">
-                Once all 5 scenes have a successful video, stitch them into one
-                downloadable clip ready to post to TikTok, Reels, or Shorts.
+                Once all 5 scene videos succeed, stitch them into one
+                downloadable ad ready for TikTok, Reels, or Shorts.
               </p>
 
               {isFinalVideoStale ? (
@@ -627,15 +627,15 @@ export default function ProjectDetail() {
                       className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
                     >
                       {isStitchingFinalVideo
-                        ? "Queuing final video..."
+                        ? "Queuing final ad..."
                         : project.finalVideo
-                          ? "Re-stitch Final Video"
-                          : "Stitch Final Video"}
+                          ? "Re-stitch Final Ad"
+                          : "Stitch Final Ad"}
                     </button>
                   </Form>
                 ) : (
                   <p className="text-sm text-ash">
-                    Generate a successful video for all 5 scenes below to unlock stitching.
+                    Generate successful videos for all 5 scenes below to unlock final stitching.
                   </p>
                 )}
 
@@ -645,7 +645,7 @@ export default function ProjectDetail() {
                     download={`${slugify(result.brief.productName)}-drama-ad.mp4`}
                     className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
                   >
-                    Download Final Video
+                    Download Final Ad
                   </a>
                 ) : null}
               </div>
@@ -661,7 +661,7 @@ export default function ProjectDetail() {
                   disabled={isCreatingAllVideos}
                   className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
                 >
-                  {isCreatingAllVideos ? "Queuing all scenes..." : "Generate All Scenes"}
+                  {isCreatingAllVideos ? "Queuing scene videos..." : "Generate 5 Scene Videos"}
                 </button>
               </Form>
 
@@ -771,10 +771,10 @@ export default function ProjectDetail() {
                               className="mt-3 rounded bg-flame px-4 py-2 text-sm font-semibold text-bone transition hover:bg-flame/90"
                             >
                               {isCreatingVideo
-                                ? "Creating video task..."
+                                ? "Queuing scene video..."
                                 : videoJob
-                                  ? "Regenerate Video"
-                                  : "Generate Video"}
+                                  ? "Regenerate Scene Video"
+                                  : "Generate Scene Video"}
                             </button>
                           </Form>
                         ) : (

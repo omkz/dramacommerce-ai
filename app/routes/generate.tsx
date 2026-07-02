@@ -237,17 +237,17 @@ export default function Generate() {
                 <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_0.8fr]">
                     <section>
                         <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
-                            Production Brief
+                            Product Brief
                         </p>
 
                         <h1 className="mt-4 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
-                            Call the next production
+                            Create a product drama ad
                         </h1>
 
                         <p className="mt-4 max-w-xl text-ash">
-                            Upload one product photo and describe the audience, mood, and
-                            platform. Four agents turn it into a story, storyboard, video
-                            prompts, and edit plan.
+                            Upload one product photo and describe the product, audience,
+                            offer, mood, and platform. Four Qwen agents turn the brief into
+                            a story, storyboard, Wan prompts, and edit plan.
                         </p>
 
                         <Form
@@ -256,7 +256,7 @@ export default function Generate() {
                             className="mt-8 space-y-6 rounded-sm border border-paper-dim bg-paper p-8 text-ink shadow-2xl"
                         >
                             <div className="flex items-center justify-between border-b border-ink/10 pb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-ink/50">
-                                <span>Call Sheet</span>
+                                <span>Product Inputs</span>
                                 <span>Scene Count · 05</span>
                             </div>
 
@@ -426,13 +426,14 @@ export default function Generate() {
                                 disabled={isGenerating}
                                 className="w-full rounded-sm bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
                             >
-                                {isGenerating ? "Rolling cameras..." : "Call Action"}
+                                {isGenerating ? "Generating product ad..." : "Generate Product Ad"}
                             </button>
 
                             {isGenerating ? (
                                 <div className="rounded-sm border border-ink/15 bg-ink/5 p-4 text-sm leading-6 text-ink/70">
-                                    Running the Story, Director, Prompt, and Editor agents. This
-                                    can take a little longer than a single model call.
+                                    Running the Story, Director, Prompt, and Editor agents. This can
+                                    take longer than a single model call because each stage validates
+                                    structured output before continuing.
                                 </div>
                             ) : null}
 
@@ -447,7 +448,7 @@ export default function Generate() {
                     <aside className="space-y-5">
                         <div className="rounded-lg border border-paper/10 bg-panel p-6">
                             <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
-                                On Set
+                                Pipeline
                             </p>
 
                             <h2 className="mt-3 font-display text-xl font-medium text-bone">

@@ -12,7 +12,7 @@ const takes = [
   {
     take: "01",
     title: "Upload the product",
-    body: "One photo, a product name, and a few lines on audience, mood, and platform.",
+    body: "One photo plus product details, audience, mood, offer, and target platform.",
   },
   {
     take: "02",
@@ -22,7 +22,7 @@ const takes = [
   {
     take: "03",
     title: "Wan shoots every scene",
-    body: "Each scene renders as real text-to-video footage, then stitches into one finished drama ad.",
+    body: "Each scene renders as video, gets a voice-over and product packshot, then stitches into one finished ad.",
   },
 ];
 
@@ -46,7 +46,7 @@ export default function Home() {
 
         <p className="mt-6 max-w-xl text-lg leading-8 text-ash">
           DramaCommerce AI writes the story, storyboards the shots, and shoots
-          the footage — turning a single product photo into a short drama ad
+          the footage — turning a single product photo and brief into a short drama ad
           ready for TikTok, Reels, or Shorts.
         </p>
 
@@ -55,7 +55,7 @@ export default function Home() {
             href="/generate"
             className="rounded bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
-            Start a Production
+            Create Product Ad
           </a>
 
           <a

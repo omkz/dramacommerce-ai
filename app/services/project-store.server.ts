@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { projects, videoJobs } from "~/db/schema";
 import { db } from "~/services/db.server";
 import type { VideoGenerationStatus } from "~/services/wan-video.server";
@@ -27,7 +27,10 @@ export type SavedProject = {
   videoJobs?: VideoGenerationJob[];
 };
 
-export async function saveProject(showPlan: ShowPlan): Promise<SavedProject> {
+export async function saveProject(
+  showPlan: ShowPlan,
+  userId: string,
+): Promise<SavedProject> {
   const project: SavedProject = {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
@@ -36,6 +39,7 @@ export async function saveProject(showPlan: ShowPlan): Promise<SavedProject> {
 
   await db.insert(projects).values({
     id: project.id,
+    userId,
     createdAt: new Date(project.createdAt),
     showPlan: project.showPlan,
   });
@@ -43,14 +47,24 @@ export async function saveProject(showPlan: ShowPlan): Promise<SavedProject> {
   return project;
 }
 
-export async function listProjects(): Promise<SavedProject[]> {
-  const rows = await db.select().from(projects).orderBy(desc(projects.createdAt));
+export async function listProjects(userId: string): Promise<SavedProject[]> {
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.userId, userId))
+    .orderBy(desc(projects.createdAt));
 
   return Promise.all(rows.map(rowToProject));
 }
 
-export async function getProject(id: string): Promise<SavedProject | null> {
-  const rows = await db.select().from(projects).where(eq(projects.id, id));
+export async function getProject(
+  id: string,
+  userId: string,
+): Promise<SavedProject | null> {
+  const rows = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)));
 
   if (!rows[0]) {
     return null;
@@ -61,6 +75,7 @@ export async function getProject(id: string): Promise<SavedProject | null> {
 
 export async function saveVideoJob(
   projectId: string,
+  userId: string,
   job: VideoGenerationJob,
 ): Promise<SavedProject> {
   await db
@@ -98,7 +113,7 @@ export async function saveVideoJob(
       },
     });
 
-  return (await getProject(projectId)) as SavedProject;
+  return (await getProject(projectId, userId)) as SavedProject;
 }
 
 async function rowToProject(row: typeof projects.$inferSelect): Promise<SavedProject> {

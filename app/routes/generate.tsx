@@ -5,6 +5,7 @@ import { saveProject } from "~/services/project-store.server";
 import { generateShowPlan } from "~/services/showrunner.server";
 import { saveUploadedImage } from "~/services/image-upload.server";
 import { checkGenerateRateLimit, getClientIp } from "~/services/rate-limit.server";
+import { requireUser } from "~/services/auth.server";
 import {
     QwenApiError,
     QwenConfigurationError,
@@ -50,6 +51,8 @@ export function meta() {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+    const user = await requireUser(request);
+
     const rateLimitResult = await checkGenerateRateLimit(getClientIp(request));
 
     if (!rateLimitResult.allowed) {
@@ -109,7 +112,7 @@ export async function action({ request }: ActionFunctionArgs) {
         };
     }
 
-    const project = await saveProject(showPlan);
+    const project = await saveProject(showPlan, user.id);
 
     return redirect(`/projects/${project.id}`);
 }

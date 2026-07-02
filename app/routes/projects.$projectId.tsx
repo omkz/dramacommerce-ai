@@ -14,6 +14,7 @@ import {
 } from "~/services/project-store.server";
 import { queryWanVideoTask } from "~/services/wan-video.server";
 import { enqueueVideoCreateJob } from "~/services/video-queue.server";
+import { requireUser } from "~/services/auth.server";
 
 const pipelineStages = [
   {
@@ -38,14 +39,15 @@ const pipelineStages = [
   },
 ];
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  const user = await requireUser(request);
   const projectId = params.projectId;
 
   if (!projectId) {
     throw new Response("Project ID is required", { status: 400 });
   }
 
-  const project = await getProject(projectId);
+  const project = await getProject(projectId, user.id);
 
   if (!project) {
     throw new Response("Project not found", { status: 404 });
@@ -55,13 +57,14 @@ export async function loader({ params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  const user = await requireUser(request);
   const projectId = params.projectId;
 
   if (!projectId) {
     throw new Response("Project ID is required", { status: 400 });
   }
 
-  const project = await getProject(projectId);
+  const project = await getProject(projectId, user.id);
 
   if (!project) {
     throw new Response("Project not found", { status: 404 });
@@ -89,7 +92,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       const now = new Date().toISOString();
 
-      await saveVideoJob(projectId, {
+      await saveVideoJob(projectId, user.id, {
         scene: scene.scene,
         provider: "wan",
         queueJobId,
@@ -128,7 +131,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     try {
       const task = await queryWanVideoTask(currentJob.taskId);
 
-      await saveVideoJob(projectId, {
+      await saveVideoJob(projectId, user.id, {
         ...currentJob,
         status: task.status,
         videoUrl: task.videoUrl,

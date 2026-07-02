@@ -1,8 +1,11 @@
 import { Link, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
 import { listProjects } from "~/services/project-store.server";
+import { requireUser } from "~/services/auth.server";
 
-export async function loader() {
-  const projects = await listProjects();
+export async function loader({ request }: LoaderFunctionArgs) {
+  const user = await requireUser(request);
+  const projects = await listProjects(user.id);
 
   return {
     projects,

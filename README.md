@@ -145,7 +145,3 @@ Production checklist:
 - Configure log collection for Qwen, Wan, upload, worker, and storage errors.
 - Move uploaded product images and generated video assets to Alibaba OSS as usage grows.
 - Use `/health` for uptime checks; it returns `200` when Postgres and Redis are reachable and `503` when either dependency fails.
-
-## Hackathon Notes
-
-For the Qwen Cloud hackathon, submit under **Track 2: AI Showrunner**. The demo flow is: generate a product drama plan from `/generate`, show the four-stage Qwen pipeline output, create a Wan video task for Scene 1, run the worker, refresh status, and preview the generated clip.

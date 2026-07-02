@@ -90,8 +90,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const deleted = await deleteProject(projectId, user.id);
 
     if (deleted) {
-      await deleteUploadedFile(deleted.showPlan.brief.imageUrl);
-      await deleteUploadedFile(deleted.finalVideo?.videoUrl);
+      await Promise.all([
+        deleteUploadedFile(deleted.showPlan.brief.imageUrl),
+        deleteUploadedFile(deleted.finalVideo?.videoUrl),
+        ...(deleted.videoJobs ?? []).map((job) =>
+          deleteUploadedFile(job.videoUrl),
+        ),
+      ]);
     }
 
     return redirect("/projects");

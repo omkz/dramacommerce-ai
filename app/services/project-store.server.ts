@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { finalVideos, projects, videoJobs } from "~/db/schema";
 import { db } from "~/services/db.server";
 import type { VideoGenerationStatus } from "~/services/wan-video.server";
@@ -64,7 +64,34 @@ export async function listProjects(userId: string): Promise<SavedProject[]> {
     .where(eq(projects.userId, userId))
     .orderBy(desc(projects.createdAt));
 
-  return Promise.all(rows.map(rowToProject));
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const projectIds = rows.map((row) => row.id);
+  const [videoJobRows, finalVideoRows] = await Promise.all([
+    db
+      .select()
+      .from(videoJobs)
+      .where(inArray(videoJobs.projectId, projectIds))
+      .orderBy(videoJobs.projectId, videoJobs.scene),
+    db
+      .select()
+      .from(finalVideos)
+      .where(inArray(finalVideos.projectId, projectIds)),
+  ]);
+  const videoJobsByProjectId = groupVideoJobsByProjectId(videoJobRows);
+  const finalVideosByProjectId = new Map(
+    finalVideoRows.map((row) => [row.projectId, rowToFinalVideo(row)]),
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt.toISOString(),
+    showPlan: row.showPlan,
+    videoJobs: videoJobsByProjectId.get(row.id) ?? [],
+    finalVideo: finalVideosByProjectId.get(row.id),
+  }));
 }
 
 export async function getProject(
@@ -200,14 +227,7 @@ async function getFinalVideo(projectId: string): Promise<FinalVideo | undefined>
     return undefined;
   }
 
-  return {
-    status: row.status as VideoGenerationStatus,
-    videoUrl: row.videoUrl ?? undefined,
-    errorMessage: row.errorMessage ?? undefined,
-    queueJobId: row.queueJobId ?? undefined,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
+  return rowToFinalVideo(row);
 }
 
 async function getVideoJobs(projectId: string): Promise<VideoGenerationJob[]> {
@@ -236,4 +256,29 @@ function rowToVideoJob(row: typeof videoJobs.$inferSelect): VideoGenerationJob {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function rowToFinalVideo(row: typeof finalVideos.$inferSelect): FinalVideo {
+  return {
+    status: row.status as VideoGenerationStatus,
+    videoUrl: row.videoUrl ?? undefined,
+    errorMessage: row.errorMessage ?? undefined,
+    queueJobId: row.queueJobId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function groupVideoJobsByProjectId(
+  rows: (typeof videoJobs.$inferSelect)[],
+): Map<string, VideoGenerationJob[]> {
+  const grouped = new Map<string, VideoGenerationJob[]>();
+
+  for (const row of rows) {
+    const jobs = grouped.get(row.projectId) ?? [];
+    jobs.push(rowToVideoJob(row));
+    grouped.set(row.projectId, jobs);
+  }
+
+  return grouped;
 }

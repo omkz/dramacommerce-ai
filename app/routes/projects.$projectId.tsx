@@ -183,8 +183,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return { error: rateLimitResult.message };
     }
 
+    const promptOverride = String(formData.get("prompt") || "").trim();
+
     try {
-      await createVideoJobForScene(projectId, user.id, scene);
+      await createVideoJobForScene(
+        projectId,
+        user.id,
+        scene,
+        promptOverride || undefined,
+      );
 
       return redirect(`/projects/${projectId}`);
     } catch (error) {
@@ -242,11 +249,14 @@ async function createVideoJobForScene(
   projectId: string,
   userId: string,
   scene: StoryboardScene,
+  promptOverride?: string,
 ): Promise<SavedProject> {
+  const prompt = promptOverride || scene.videoPrompt;
+
   const queueJobId = await enqueueVideoCreateJob({
     projectId,
     scene: scene.scene,
-    prompt: scene.videoPrompt,
+    prompt,
   });
 
   const now = new Date().toISOString();
@@ -256,7 +266,7 @@ async function createVideoJobForScene(
     provider: "wan",
     queueJobId,
     status: "QUEUED",
-    prompt: scene.videoPrompt,
+    prompt,
     attempts: 0,
     nextPollAt: new Date(Date.now() + 30_000).toISOString(),
     createdAt: now,
@@ -274,6 +284,10 @@ function getNextVideoPollAt(status: string): string | undefined {
 
 function isFailedJobStatus(status: string): boolean {
   return status === "FAILED" || status === "CANCELED";
+}
+
+function isTerminalJobStatus(status: string): boolean {
+  return status === "SUCCEEDED" || status === "FAILED" || status === "CANCELED";
 }
 
 function slugify(value: string): string {
@@ -310,6 +324,13 @@ export default function ProjectDetail() {
       project.videoJobs?.some(
         (job) => job.scene === scene.scene && job.status === "SUCCEEDED",
       ),
+    );
+  const isFinalVideoStale =
+    project.finalVideo?.status === "SUCCEEDED" &&
+    project.videoJobs?.some(
+      (job) =>
+        new Date(job.updatedAt).getTime() >
+        new Date(project.finalVideo!.updatedAt).getTime(),
     );
 
   return (
@@ -443,6 +464,13 @@ export default function ProjectDetail() {
                 downloadable clip ready to post to TikTok, Reels, or Shorts.
               </p>
 
+              {isFinalVideoStale ? (
+                <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
+                  A scene was regenerated after this video was stitched — re-stitch
+                  to include the latest clips.
+                </p>
+              ) : null}
+
               {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
                 <video
                   src={project.finalVideo.videoUrl}
@@ -531,7 +559,8 @@ export default function ProjectDetail() {
                     isPendingForThisScene && pendingIntent === "create-video-task";
                   const isRefreshingVideo =
                     isPendingForThisScene && pendingIntent === "refresh-video-task";
-                  const canRetry = !videoJob || isFailedJobStatus(videoJob.status);
+                  const canRegenerate = !videoJob || isTerminalJobStatus(videoJob.status);
+                  const currentPrompt = videoJob?.prompt ?? scene.videoPrompt;
 
                   return (
                     <div
@@ -551,11 +580,6 @@ export default function ProjectDetail() {
                       <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm text-slate-300">
                         <span className="font-semibold text-white">Voice-over:</span>{" "}
                         {scene.voiceOver}
-                      </p>
-
-                      <p className="mt-3 rounded-lg bg-indigo-400/10 p-3 text-sm leading-6 text-indigo-100">
-                        <span className="font-semibold text-white">Video prompt:</span>{" "}
-                        {scene.videoPrompt}
                       </p>
 
                       {videoJob?.videoUrl ? (
@@ -597,25 +621,43 @@ export default function ProjectDetail() {
                         </div>
                       ) : null}
 
-                      <div className="mt-3 flex flex-wrap gap-3">
-                        {canRetry ? (
-                          <Form method="post">
-                            <input type="hidden" name="intent" value="create-video-task" />
-                            <input type="hidden" name="scene" value={scene.scene} />
-                            <button
-                              type="submit"
-                              disabled={isCreatingVideo}
-                              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
-                            >
-                              {isCreatingVideo
-                                ? "Creating video task..."
-                                : videoJob
-                                  ? "Retry Video"
-                                  : "Generate Video"}
-                            </button>
-                          </Form>
-                        ) : (
-                          <Form method="post">
+                      {canRegenerate ? (
+                        <Form method="post" className="mt-3">
+                          <input type="hidden" name="intent" value="create-video-task" />
+                          <input type="hidden" name="scene" value={scene.scene} />
+                          <label
+                            htmlFor={`prompt-${scene.scene}`}
+                            className="block text-xs font-semibold uppercase tracking-wide text-slate-400"
+                          >
+                            Video prompt
+                          </label>
+                          <textarea
+                            id={`prompt-${scene.scene}`}
+                            name="prompt"
+                            defaultValue={currentPrompt}
+                            rows={3}
+                            className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 p-3 text-sm leading-6 text-slate-200 outline-none focus:border-white/30"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isCreatingVideo}
+                            className="mt-3 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+                          >
+                            {isCreatingVideo
+                              ? "Creating video task..."
+                              : videoJob
+                                ? "Regenerate Video"
+                                : "Generate Video"}
+                          </button>
+                        </Form>
+                      ) : (
+                        <>
+                          <p className="mt-3 rounded-lg bg-indigo-400/10 p-3 text-sm leading-6 text-indigo-100">
+                            <span className="font-semibold text-white">Video prompt:</span>{" "}
+                            {currentPrompt}
+                          </p>
+
+                          <Form method="post" className="mt-3">
                             <input type="hidden" name="intent" value="refresh-video-task" />
                             <input type="hidden" name="scene" value={scene.scene} />
                             <button
@@ -626,8 +668,8 @@ export default function ProjectDetail() {
                               {isRefreshingVideo ? "Refreshing status..." : "Refresh Status"}
                             </button>
                           </Form>
-                        )}
-                      </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}

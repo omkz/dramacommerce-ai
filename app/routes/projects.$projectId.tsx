@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -276,6 +276,15 @@ function isFailedJobStatus(status: string): boolean {
   return status === "FAILED" || status === "CANCELED";
 }
 
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || "product-drama";
+}
+
 export function meta() {
   return [
     { title: "Generated Project | DramaCommerce AI" },
@@ -463,26 +472,38 @@ export default function ProjectDetail() {
                 </div>
               ) : null}
 
-              {allScenesSucceeded ? (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="create-stitch-task" />
-                  <button
-                    type="submit"
-                    disabled={isStitchingFinalVideo}
-                    className="rounded-xl bg-white px-5 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
+              <div className="flex flex-wrap gap-3">
+                {allScenesSucceeded ? (
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="create-stitch-task" />
+                    <button
+                      type="submit"
+                      disabled={isStitchingFinalVideo}
+                      className="rounded-xl bg-white px-5 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
+                    >
+                      {isStitchingFinalVideo
+                        ? "Queuing final video..."
+                        : project.finalVideo
+                          ? "Re-stitch Final Video"
+                          : "Stitch Final Video"}
+                    </button>
+                  </Form>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Generate a successful video for all 5 scenes below to unlock stitching.
+                  </p>
+                )}
+
+                {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
+                  <a
+                    href={project.finalVideo.videoUrl}
+                    download={`${slugify(result.brief.productName)}-drama-ad.mp4`}
+                    className="rounded-xl border border-white/15 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
                   >
-                    {isStitchingFinalVideo
-                      ? "Queuing final video..."
-                      : project.finalVideo
-                        ? "Re-stitch Final Video"
-                        : "Stitch Final Video"}
-                  </button>
-                </Form>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Generate a successful video for all 5 scenes below to unlock stitching.
-                </p>
-              )}
+                    Download Final Video
+                  </a>
+                ) : null}
+              </div>
             </div>
           </ResultCard>
 
@@ -538,11 +559,21 @@ export default function ProjectDetail() {
                       </p>
 
                       {videoJob?.videoUrl ? (
-                        <video
-                          src={videoJob.videoUrl}
-                          controls
-                          className="mt-3 w-full rounded-xl border border-white/10 bg-black"
-                        />
+                        <>
+                          <video
+                            src={videoJob.videoUrl}
+                            controls
+                            className="mt-3 w-full rounded-xl border border-white/10 bg-black"
+                          />
+
+                          <a
+                            href={videoJob.videoUrl}
+                            download={`${slugify(result.brief.productName)}-scene-${scene.scene}.mp4`}
+                            className="mt-3 inline-block text-xs font-semibold text-slate-300 underline hover:text-white"
+                          >
+                            Download Scene {scene.scene}
+                          </a>
+                        </>
                       ) : null}
 
                       {videoJob ? (
@@ -620,6 +651,7 @@ export default function ProjectDetail() {
           <ResultCard title="Social Caption">
             <p className="leading-7 text-slate-300">{result.caption}</p>
             <p className="mt-4 text-lg font-bold">{result.cta}</p>
+            <CopyCaptionButton caption={result.caption} cta={result.cta} />
           </ResultCard>
         </section>
       </div>
@@ -648,5 +680,24 @@ function SmallItem({ label, value }: { label: string; value: string }) {
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-medium text-slate-100">{value}</p>
     </div>
+  );
+}
+
+function CopyCaptionButton({ caption, cta }: { caption: string; cta: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard.writeText(`${caption}\n\n${cta}`).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      }}
+      className="mt-4 rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+    >
+      {copied ? "Copied!" : "Copy Caption + CTA"}
+    </button>
   );
 }

@@ -13,6 +13,19 @@ const GLOBAL_DAILY_MAX_ATTEMPTS = Number(
 
 const GLOBAL_KEY = "global";
 
+const VIDEO_CREATE_WINDOW_MINUTES = Number(
+  process.env.RATE_LIMIT_VIDEO_CREATE_WINDOW_MINUTES || "10",
+);
+const VIDEO_CREATE_MAX_ATTEMPTS = Number(
+  process.env.RATE_LIMIT_VIDEO_CREATE_MAX || "10",
+);
+const VIDEO_STITCH_WINDOW_MINUTES = Number(
+  process.env.RATE_LIMIT_VIDEO_STITCH_WINDOW_MINUTES || "10",
+);
+const VIDEO_STITCH_MAX_ATTEMPTS = Number(
+  process.env.RATE_LIMIT_VIDEO_STITCH_MAX || "5",
+);
+
 export type RateLimitResult =
   | { allowed: true }
   | { allowed: false; message: string };
@@ -20,23 +33,29 @@ export type RateLimitResult =
 let redisClient: Redis | null = null;
 let perIpLimiter: RateLimiterRedis | null = null;
 let globalLimiter: RateLimiterRedis | null = null;
+let videoCreateLimiter: RateLimiterRedis | null = null;
+let videoStitchLimiter: RateLimiterRedis | null = null;
+
+function getRedisClient(): Redis {
+  redisClient ??= new Redis(mustGetRedisUrl(), { maxRetriesPerRequest: null });
+
+  return redisClient;
+}
 
 function getLimiters(): {
   perIp: RateLimiterRedis;
   global: RateLimiterRedis;
 } {
   if (!perIpLimiter || !globalLimiter) {
-    redisClient ??= new Redis(mustGetRedisUrl(), { maxRetriesPerRequest: null });
-
     perIpLimiter = new RateLimiterRedis({
-      storeClient: redisClient,
+      storeClient: getRedisClient(),
       keyPrefix: "rl_generate_ip",
       points: PER_IP_MAX_ATTEMPTS,
       duration: PER_IP_WINDOW_MINUTES * 60,
     });
 
     globalLimiter = new RateLimiterRedis({
-      storeClient: redisClient,
+      storeClient: getRedisClient(),
       keyPrefix: "rl_generate_global",
       points: GLOBAL_DAILY_MAX_ATTEMPTS,
       duration: 24 * 60 * 60,
@@ -44,6 +63,28 @@ function getLimiters(): {
   }
 
   return { perIp: perIpLimiter, global: globalLimiter };
+}
+
+function getVideoCreateLimiter(): RateLimiterRedis {
+  videoCreateLimiter ??= new RateLimiterRedis({
+    storeClient: getRedisClient(),
+    keyPrefix: "rl_video_create_user",
+    points: VIDEO_CREATE_MAX_ATTEMPTS,
+    duration: VIDEO_CREATE_WINDOW_MINUTES * 60,
+  });
+
+  return videoCreateLimiter;
+}
+
+function getVideoStitchLimiter(): RateLimiterRedis {
+  videoStitchLimiter ??= new RateLimiterRedis({
+    storeClient: getRedisClient(),
+    keyPrefix: "rl_video_stitch_user",
+    points: VIDEO_STITCH_MAX_ATTEMPTS,
+    duration: VIDEO_STITCH_WINDOW_MINUTES * 60,
+  });
+
+  return videoStitchLimiter;
 }
 
 function mustGetRedisUrl(): string {
@@ -82,6 +123,37 @@ export async function checkGenerateRateLimit(
   }
 
   return { allowed: true };
+}
+
+export async function checkVideoCreateRateLimit(
+  userId: string,
+  points = 1,
+): Promise<RateLimitResult> {
+  try {
+    await getVideoCreateLimiter().consume(userId, points);
+
+    return { allowed: true };
+  } catch {
+    return {
+      allowed: false,
+      message: `Too many video generation requests. Try again in a few minutes (limit: ${VIDEO_CREATE_MAX_ATTEMPTS} per ${VIDEO_CREATE_WINDOW_MINUTES} minutes).`,
+    };
+  }
+}
+
+export async function checkVideoStitchRateLimit(
+  userId: string,
+): Promise<RateLimitResult> {
+  try {
+    await getVideoStitchLimiter().consume(userId);
+
+    return { allowed: true };
+  } catch {
+    return {
+      allowed: false,
+      message: `Too many final-video requests. Try again in a few minutes (limit: ${VIDEO_STITCH_MAX_ATTEMPTS} per ${VIDEO_STITCH_WINDOW_MINUTES} minutes).`,
+    };
+  }
 }
 
 export function getClientIp(request: Request): string {

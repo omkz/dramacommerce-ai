@@ -20,6 +20,10 @@ import {
   enqueueVideoStitchJob,
 } from "~/services/video-queue.server";
 import { requireUser } from "~/services/auth.server";
+import {
+  checkVideoCreateRateLimit,
+  checkVideoStitchRateLimit,
+} from "~/services/rate-limit.server";
 import type { StoryboardScene } from "~/types/showrunner";
 
 const pipelineStages = [
@@ -80,9 +84,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = String(formData.get("intent") || "");
 
   if (intent === "create-all-video-tasks") {
-    const scenesToCreate = project.showPlan.storyboard.filter(
-      (scene) => !project.videoJobs?.some((job) => job.scene === scene.scene),
+    const scenesToCreate = project.showPlan.storyboard.filter((scene) => {
+      const job = project.videoJobs?.find((item) => item.scene === scene.scene);
+
+      return !job || isFailedJobStatus(job.status);
+    });
+
+    if (scenesToCreate.length === 0) {
+      return redirect(`/projects/${projectId}`);
+    }
+
+    const rateLimitResult = await checkVideoCreateRateLimit(
+      user.id,
+      scenesToCreate.length,
     );
+
+    if (!rateLimitResult.allowed) {
+      return { error: rateLimitResult.message };
+    }
 
     const failures: number[] = [];
 
@@ -119,6 +138,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       });
     }
 
+    const rateLimitResult = await checkVideoStitchRateLimit(user.id);
+
+    if (!rateLimitResult.allowed) {
+      return { error: rateLimitResult.message };
+    }
+
     try {
       const queueJobId = await enqueueVideoStitchJob({ projectId });
       const now = new Date().toISOString();
@@ -152,6 +177,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "create-video-task") {
+    const rateLimitResult = await checkVideoCreateRateLimit(user.id);
+
+    if (!rateLimitResult.allowed) {
+      return { error: rateLimitResult.message };
+    }
+
     try {
       await createVideoJobForScene(projectId, user.id, scene);
 
@@ -239,6 +270,10 @@ function getNextVideoPollAt(status: string): string | undefined {
   }
 
   return undefined;
+}
+
+function isFailedJobStatus(status: string): boolean {
+  return status === "FAILED" || status === "CANCELED";
 }
 
 export function meta() {
@@ -475,6 +510,7 @@ export default function ProjectDetail() {
                     isPendingForThisScene && pendingIntent === "create-video-task";
                   const isRefreshingVideo =
                     isPendingForThisScene && pendingIntent === "refresh-video-task";
+                  const canRetry = !videoJob || isFailedJobStatus(videoJob.status);
 
                   return (
                     <div
@@ -531,7 +567,7 @@ export default function ProjectDetail() {
                       ) : null}
 
                       <div className="mt-3 flex flex-wrap gap-3">
-                        {!videoJob ? (
+                        {canRetry ? (
                           <Form method="post">
                             <input type="hidden" name="intent" value="create-video-task" />
                             <input type="hidden" name="scene" value={scene.scene} />
@@ -540,7 +576,11 @@ export default function ProjectDetail() {
                               disabled={isCreatingVideo}
                               className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
                             >
-                              {isCreatingVideo ? "Creating video task..." : "Generate Video"}
+                              {isCreatingVideo
+                                ? "Creating video task..."
+                                : videoJob
+                                  ? "Retry Video"
+                                  : "Generate Video"}
                             </button>
                           </Form>
                         ) : (

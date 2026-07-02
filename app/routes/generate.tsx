@@ -3,7 +3,11 @@ import type { ActionFunctionArgs } from "react-router";
 import { ZodError } from "zod";
 import { saveProject } from "~/services/project-store.server";
 import { generateShowPlan } from "~/services/showrunner.server";
-import { saveUploadedImage } from "~/services/image-upload.server";
+import {
+    assertValidProductImage,
+    deleteUploadedFile,
+    saveUploadedImage,
+} from "~/services/image-upload.server";
 import { checkGenerateRateLimit } from "~/services/rate-limit.server";
 import { requireUser } from "~/services/auth.server";
 import {
@@ -52,13 +56,6 @@ export function meta() {
 
 export async function action({ request }: ActionFunctionArgs) {
     const user = await requireUser(request);
-
-    const rateLimitResult = await checkGenerateRateLimit(user.id);
-
-    if (!rateLimitResult.allowed) {
-        return { error: rateLimitResult.message };
-    }
-
     const formData = await request.formData();
 
     const productName = getFormString(formData, "productName");
@@ -80,15 +77,22 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const productImage = formData.get("productImage");
-    let uploadedImage: Awaited<ReturnType<typeof saveUploadedImage>>;
 
     try {
-        uploadedImage = await saveUploadedImage(productImage);
+        assertValidProductImage(productImage);
     } catch (error) {
         return {
             error: getUploadErrorMessage(error),
         };
     }
+
+    const rateLimitResult = await checkGenerateRateLimit(user.id);
+
+    if (!rateLimitResult.allowed) {
+        return { error: rateLimitResult.message };
+    }
+
+    const uploadedImage = await saveUploadedImage(productImage);
 
     const brief = {
         productName,
@@ -106,15 +110,21 @@ export async function action({ request }: ActionFunctionArgs) {
         showPlan = await generateShowPlan(brief);
     } catch (error) {
         console.error("Failed to generate show plan:", error);
+        await deleteUploadedFile(uploadedImage.imageUrl);
 
         return {
             error: getQwenErrorMessage(error),
         };
     }
 
-    const project = await saveProject(showPlan, user.id);
+    try {
+        const project = await saveProject(showPlan, user.id);
 
-    return redirect(`/projects/${project.id}`);
+        return redirect(`/projects/${project.id}`);
+    } catch (error) {
+        await deleteUploadedFile(uploadedImage.imageUrl);
+        throw error;
+    }
 }
 
 function getFormString(formData: FormData, key: string): string {
@@ -252,6 +262,7 @@ export default function Generate() {
                                     name="productImage"
                                     type="file"
                                     accept="image/*"
+                                    required
                                     className="mt-2 w-full text-sm text-ink/70 file:mr-4 file:rounded-sm file:border-0 file:bg-ink file:px-4 file:py-2 file:font-semibold file:text-bone"
                                 />
                             </div>

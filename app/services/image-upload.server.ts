@@ -15,19 +15,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
 export async function saveUploadedImage(
   file: FormDataEntryValue | null,
 ): Promise<{ imageName: string; imageUrl?: string }> {
-  if (!(file instanceof File) || !file.name) {
-    return {
-      imageName: "No image uploaded",
-    };
-  }
-
-  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-    throw new Error("Only JPG, PNG, WebP, and GIF images are allowed.");
-  }
-
-  if (file.size > MAX_IMAGE_SIZE) {
-    throw new Error("Image must be smaller than 5MB.");
-  }
+  assertValidProductImage(file);
 
   await mkdir(UPLOAD_DIR, { recursive: true });
 
@@ -42,6 +30,22 @@ export async function saveUploadedImage(
     imageName: file.name,
     imageUrl: `/uploads/${filename}`,
   };
+}
+
+export function assertValidProductImage(
+  file: FormDataEntryValue | null,
+): asserts file is File {
+  if (!(file instanceof File) || !file.name) {
+    throw new Error("Product image is required.");
+  }
+
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+    throw new Error("Only JPG, PNG, WebP, and GIF images are allowed.");
+  }
+
+  if (file.size > MAX_IMAGE_SIZE) {
+    throw new Error("Image must be smaller than 5MB.");
+  }
 }
 
 export async function deleteUploadedFile(

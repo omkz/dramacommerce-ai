@@ -49,6 +49,13 @@ Run the video worker in a second terminal when testing Wan video generation:
 pnpm run worker:video
 ```
 
+> **Without this running, "Generate Video" clicks stay stuck at `QUEUED` forever.**
+> The web app only enqueues a Redis/BullMQ job; a separate `worker:video`
+> process is what actually calls the Wan API and polls task status. This is
+> two processes by design (see [Deployment Notes](#deployment-notes)), not a
+> bug — if a video job looks frozen, check whether the worker is running
+> before assuming Wan itself is slow.
+
 ## Environment Variables
 
 ```env

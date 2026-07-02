@@ -67,7 +67,7 @@ console.log(
   `Video worker started. Queue: ${VIDEO_QUEUE_NAME}. Concurrency: ${CONCURRENCY}.`,
 );
 
-async function createWanTask({ projectId, scene, prompt }) {
+async function createWanTask({ projectId, scene, prompt, voiceOver }) {
   const task = await createWanTextToVideoTask(prompt);
   const now = new Date().toISOString();
   const nextPollAt = new Date(Date.now() + POLL_DELAY_MS).toISOString();
@@ -87,7 +87,7 @@ async function createWanTask({ projectId, scene, prompt }) {
 
   await queue.add(
     "video.poll",
-    { projectId, scene, taskId: task.taskId },
+    { projectId, scene, taskId: task.taskId, voiceOver },
     {
       delay: POLL_DELAY_MS,
       attempts: 10,
@@ -98,10 +98,23 @@ async function createWanTask({ projectId, scene, prompt }) {
   );
 }
 
-async function pollWanTask({ projectId, scene, taskId }) {
+async function pollWanTask({ projectId, scene, taskId, voiceOver }) {
   const task = await queryWanVideoTask(taskId);
   const now = new Date().toISOString();
   const nextPollAt = getNextPollAt(task.status);
+
+  let videoUrl = task.videoUrl ?? null;
+
+  if (task.status === "SUCCEEDED" && videoUrl) {
+    try {
+      videoUrl = await narrateAndMuxScene(videoUrl, voiceOver, projectId, scene);
+    } catch (error) {
+      console.error(
+        `Voice-over synthesis/mux failed for project ${projectId} scene ${scene}, keeping silent clip:`,
+        error,
+      );
+    }
+  }
 
   await pool.query(
     `
@@ -117,7 +130,7 @@ async function pollWanTask({ projectId, scene, taskId }) {
   `,
     [
       task.status,
-      task.videoUrl ?? null,
+      videoUrl,
       task.errorMessage ?? null,
       now,
       nextPollAt,
@@ -130,7 +143,7 @@ async function pollWanTask({ projectId, scene, taskId }) {
   if (nextPollAt) {
     await queue.add(
       "video.poll",
-      { projectId, scene, taskId },
+      { projectId, scene, taskId, voiceOver },
       {
         delay: POLL_DELAY_MS,
         attempts: 10,
@@ -140,6 +153,101 @@ async function pollWanTask({ projectId, scene, taskId }) {
       },
     );
   }
+}
+
+async function narrateAndMuxScene(videoUrl, voiceOver, projectId, scene) {
+  const audioUrl = await synthesizeVoiceOver(voiceOver);
+
+  const tempDir = path.join(os.tmpdir(), `dramacommerce-narrate-${projectId}-${scene}`);
+
+  try {
+    await mkdir(tempDir, { recursive: true });
+
+    const videoPath = path.join(tempDir, "video.mp4");
+    const audioPath = path.join(tempDir, "audio.mp3");
+    await downloadFile(videoUrl, videoPath);
+    await downloadFile(audioUrl, audioPath);
+
+    const outputFilename = `${randomUUID()}.mp4`;
+    const tempOutputPath = path.join(tempDir, outputFilename);
+    await muxVideoWithAudio(videoPath, audioPath, tempOutputPath);
+
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    await copyFile(tempOutputPath, path.join(UPLOAD_DIR, outputFilename));
+
+    return `/uploads/${outputFilename}`;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function muxVideoWithAudio(videoPath, audioPath, outputPath) {
+  // -af apad pads the audio with silence if it's shorter than the video, so
+  // -shortest always caps the output at the video's real length — without
+  // apad, a short voice-over line would truncate the video to match it.
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i",
+    videoPath,
+    "-i",
+    audioPath,
+    "-map",
+    "0:v:0",
+    "-map",
+    "1:a:0",
+    "-c:v",
+    "copy",
+    "-c:a",
+    "aac",
+    "-af",
+    "apad",
+    "-shortest",
+    outputPath,
+  ]);
+}
+
+async function synthesizeVoiceOver(text) {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const baseUrl = process.env.DASHSCOPE_TTS_BASE_URL || process.env.DASHSCOPE_VIDEO_BASE_URL;
+  const model = process.env.DASHSCOPE_TTS_MODEL || "qwen3-tts-flash";
+  const voice = process.env.DASHSCOPE_TTS_VOICE || "Cherry";
+
+  if (!apiKey || !baseUrl) {
+    throw new Error("TTS environment variables are not configured.");
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/services/aigc/multimodal-generation/generation`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        input: {
+          text,
+          voice,
+          language_type: "Auto",
+        },
+      }),
+    },
+  );
+
+  const data = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(data.message || data.code || `TTS API error: ${response.status}`);
+  }
+
+  const audioUrl = data.output?.audio?.url;
+
+  if (!audioUrl) {
+    throw new Error("TTS did not return an audio URL.");
+  }
+
+  return audioUrl;
 }
 
 async function stitchFinalVideo({ projectId }) {
@@ -223,6 +331,22 @@ async function updateFinalVideo(projectId, { status, videoUrl, errorMessage }) {
 }
 
 async function downloadFile(url, destPath) {
+  // Narrated scene clips are saved locally and referenced as "/uploads/..."
+  // (relative paths, meant for the browser to resolve against the app's own
+  // origin) rather than absolute URLs like Wan's — fetch() can't resolve a
+  // relative path with no base, so read those straight off disk instead.
+  // Same path-traversal guard as routes/uploads.$filename.tsx.
+  if (url.startsWith("/uploads/")) {
+    const filename = url.slice("/uploads/".length);
+
+    if (!filename || filename.includes("/") || filename.includes("..")) {
+      throw new Error(`Invalid upload path: ${url}`);
+    }
+
+    await copyFile(path.join(UPLOAD_DIR, filename), destPath);
+    return;
+  }
+
   const response = await fetch(url);
 
   if (!response.ok) {

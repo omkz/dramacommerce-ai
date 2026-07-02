@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-DramaCommerce AI is a React Router 8 full-stack app. A merchant uploads a product image plus a short brief (audience, mood, platform, duration); the app runs a Qwen-powered AI "showrunner" pipeline that produces a story concept, hook, voice-over, a 5-scene storyboard with video prompts, an editing timeline, a social caption/CTA, can kick off real text-to-video renders for each scene via Alibaba Cloud's Wan model, and stitches the 5 successful clips into one final drama ad with ffmpeg.
+DramaCommerce AI is a React Router 8 full-stack app. A merchant uploads a product image plus a short brief (audience, mood, platform, duration); the app runs a Qwen-powered AI "showrunner" pipeline that produces a story concept, hook, voice-over, a 5-scene storyboard with video prompts, an editing timeline, a social caption/CTA, can kick off real text-to-video renders for each scene via Alibaba Cloud's Wan model (each scene's AI-written voice-over line is synthesized via DashScope TTS and muxed onto the clip), and stitches the 5 successful clips into one final drama ad with ffmpeg.
 
 ## Commands
 
@@ -21,10 +21,11 @@ There is no test suite and no lint script configured in `package.json`.
 
 ## Environment
 
-Copy `.env.example` to `.env`. Two separate Alibaba Cloud DashScope surfaces are used with different base URLs:
+Copy `.env.example` to `.env`. Three separate Alibaba Cloud DashScope surfaces are used, each with its own base URL var (even though TTS and Wan usually share the same workspace URL in practice):
 
 - `DASHSCOPE_API_KEY`, `QWEN_BASE_URL` (includes `/compatible-mode/v1` — OpenAI-compatible chat completions), `QWEN_MODEL` — for the showrunner planning step.
 - `DASHSCOPE_VIDEO_BASE_URL` (no `/compatible-mode/v1` suffix — uses `/api/v1/services/...` and `/api/v1/tasks/...`), `WAN_VIDEO_MODEL`, `WAN_VIDEO_RESOLUTION`, `WAN_VIDEO_RATIO`, `WAN_VIDEO_DURATION` — for Wan video generation.
+- `DASHSCOPE_TTS_BASE_URL` (same `/api/v1/services/...` style), `DASHSCOPE_TTS_MODEL` (default `qwen3-tts-flash`), `DASHSCOPE_TTS_VOICE` (default `Cherry`) — for scene voice-over synthesis. Uses the same `DASHSCOPE_API_KEY`.
 
 If Qwen env vars are missing or the Qwen call fails, generation returns an error and no project is created. Do not reintroduce automatic mock fallback for production generation.
 
@@ -39,7 +40,7 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
    - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a Wan-ready `videoPrompt` per scene)
    - `agents/editor-agent.server.ts` — storyboard → `EditorPackage` (timeline, caption, CTA)
 3. Failures bubble to the `/generate` action, which shows an error instead of saving a project.
-4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for any/all scenes (`intent=create-video-task` / `intent=refresh-video-task` / `intent=create-all-video-tasks` form actions call `services/wan-video.server.ts`, job state stored via `services/project-store.server.ts#saveVideoJob`). Once all 5 scenes reach `SUCCEEDED`, `intent=create-stitch-task` enqueues a `video.stitch` BullMQ job; `scripts/video-worker.mjs` downloads the 5 Wan clips, concatenates them with `ffmpeg` (stream-copy first, re-encode fallback if codecs mismatch), and writes the result to `uploads/`. Stitch status/output is tracked in the `final_videos` table (one row per project) via `services/project-store.server.ts#saveFinalVideo`.
+4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for any/all scenes (`intent=create-video-task` / `intent=refresh-video-task` / `intent=create-all-video-tasks` form actions call `services/wan-video.server.ts`, job state stored via `services/project-store.server.ts#saveVideoJob`). When `scripts/video-worker.mjs` polls a scene to `SUCCEEDED`, it synthesizes that scene's `voiceOver` line via DashScope TTS and muxes the audio onto the clip with `ffmpeg` before saving — the raw Wan clip has no audio track at all. If TTS or muxing fails, the worker falls back to the silent Wan clip rather than failing the job (the Wan generation cost is already spent). Once all 5 scenes reach `SUCCEEDED`, `intent=create-stitch-task` enqueues a `video.stitch` BullMQ job; the worker downloads the 5 (now-narrated) clips, concatenates them with `ffmpeg` (stream-copy first, re-encode fallback if codecs mismatch), and writes the result to `uploads/`. Stitch status/output is tracked in the `final_videos` table (one row per project) via `services/project-store.server.ts#saveFinalVideo`.
 
 ### Storage
 

@@ -1,6 +1,6 @@
 # DramaCommerce AI
 
-DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene video clip using Qwen/Wan on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
+DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene narrated video clip using Qwen/Wan/DashScope TTS on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
 
 ## Features
 
@@ -11,6 +11,7 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - Redis/BullMQ background queue for Wan video jobs
 - Local image storage in `uploads/`
 - Wan text-to-video task creation for any or all 5 scenes
+- DashScope TTS voice-over synthesis muxed onto each scene clip
 - Worker-driven video task polling and video preview
 - ffmpeg-based stitching of all 5 scene clips into one final video
 - Dockerfile ready for Alibaba Cloud ECS
@@ -23,6 +24,7 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - TypeScript
 - Qwen / Alibaba Cloud Model Studio compatible chat API
 - Wan / DashScope video generation API
+- DashScope TTS (qwen3-tts-flash) for scene voice-over
 - Postgres for durable application data
 - Redis and BullMQ for background jobs
 
@@ -74,11 +76,15 @@ WAN_VIDEO_MODEL=wan2.1-t2v-turbo
 WAN_VIDEO_RESOLUTION=720P
 WAN_VIDEO_RATIO=9:16
 WAN_VIDEO_DURATION=5
+
+DASHSCOPE_TTS_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com
+DASHSCOPE_TTS_MODEL=qwen3-tts-flash
+DASHSCOPE_TTS_VOICE=Cherry
 ```
 
 `QWEN_BASE_URL` includes `/compatible-mode/v1` because it is used for OpenAI-compatible chat completions.
 
-`DASHSCOPE_VIDEO_BASE_URL` does not include `/compatible-mode/v1` because the Wan video API uses `/api/v1/services/...` and `/api/v1/tasks/...`.
+`DASHSCOPE_VIDEO_BASE_URL` does not include `/compatible-mode/v1` because the Wan video API uses `/api/v1/services/...` and `/api/v1/tasks/...`. `DASHSCOPE_TTS_BASE_URL` uses the same style and is usually the same value as `DASHSCOPE_VIDEO_BASE_URL` (same DashScope workspace), kept as a separate var per DashScope surface.
 
 ## Development Commands
 

@@ -270,6 +270,7 @@ async function createVideoJobForScene(
     projectId,
     scene: scene.scene,
     prompt,
+    voiceOver: scene.voiceOver,
   });
 
   const now = new Date().toISOString();

@@ -4,12 +4,14 @@ export type VideoCreateJobData = {
   projectId: string;
   scene: number;
   prompt: string;
+  voiceOver: string;
 };
 
 export type VideoPollJobData = {
   projectId: string;
   scene: number;
   taskId: string;
+  voiceOver: string;
 };
 
 export type VideoStitchJobData = {

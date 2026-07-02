@@ -34,6 +34,7 @@ function getContentType(filename: string): string {
   if (extension === ".webp") return "image/webp";
   if (extension === ".gif") return "image/gif";
   if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".mp4") return "video/mp4";
 
   return "application/octet-stream";
 }

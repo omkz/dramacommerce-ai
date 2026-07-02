@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { projects, videoJobs } from "~/db/schema";
+import { finalVideos, projects, videoJobs } from "~/db/schema";
 import { db } from "~/services/db.server";
 import type { VideoGenerationStatus } from "~/services/wan-video.server";
 import type { ShowPlan } from "~/types/showrunner";
@@ -20,11 +20,21 @@ export type VideoGenerationJob = {
   updatedAt: string;
 };
 
+export type FinalVideo = {
+  status: VideoGenerationStatus;
+  videoUrl?: string;
+  errorMessage?: string;
+  queueJobId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SavedProject = {
   id: string;
   createdAt: string;
   showPlan: ShowPlan;
   videoJobs?: VideoGenerationJob[];
+  finalVideo?: FinalVideo;
 };
 
 export async function saveProject(
@@ -116,12 +126,70 @@ export async function saveVideoJob(
   return (await getProject(projectId, userId)) as SavedProject;
 }
 
+export async function saveFinalVideo(
+  projectId: string,
+  userId: string,
+  finalVideo: FinalVideo,
+): Promise<SavedProject> {
+  await db
+    .insert(finalVideos)
+    .values({
+      projectId,
+      status: finalVideo.status,
+      videoUrl: finalVideo.videoUrl,
+      errorMessage: finalVideo.errorMessage,
+      queueJobId: finalVideo.queueJobId,
+      createdAt: new Date(finalVideo.createdAt),
+      updatedAt: new Date(finalVideo.updatedAt),
+    })
+    .onConflictDoUpdate({
+      target: finalVideos.projectId,
+      set: {
+        status: finalVideo.status,
+        videoUrl: finalVideo.videoUrl,
+        errorMessage: finalVideo.errorMessage,
+        queueJobId: finalVideo.queueJobId,
+        updatedAt: new Date(finalVideo.updatedAt),
+      },
+    });
+
+  return (await getProject(projectId, userId)) as SavedProject;
+}
+
 async function rowToProject(row: typeof projects.$inferSelect): Promise<SavedProject> {
+  const [videoJobsForProject, finalVideoForProject] = await Promise.all([
+    getVideoJobs(row.id),
+    getFinalVideo(row.id),
+  ]);
+
   return {
     id: row.id,
     createdAt: row.createdAt.toISOString(),
     showPlan: row.showPlan,
-    videoJobs: await getVideoJobs(row.id),
+    videoJobs: videoJobsForProject,
+    finalVideo: finalVideoForProject,
+  };
+}
+
+async function getFinalVideo(projectId: string): Promise<FinalVideo | undefined> {
+  const rows = await db
+    .select()
+    .from(finalVideos)
+    .where(eq(finalVideos.projectId, projectId));
+
+  const row = rows[0];
+
+  if (!row) {
+    return undefined;
+  }
+
+  return {
+    status: row.status as VideoGenerationStatus,
+    videoUrl: row.videoUrl ?? undefined,
+    errorMessage: row.errorMessage ?? undefined,
+    queueJobId: row.queueJobId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 

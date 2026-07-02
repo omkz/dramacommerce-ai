@@ -12,12 +12,18 @@ export type VideoPollJobData = {
   taskId: string;
 };
 
+export type VideoStitchJobData = {
+  projectId: string;
+};
+
 export const VIDEO_QUEUE_NAME = "video-generation";
 
-let queue: Queue<VideoCreateJobData | VideoPollJobData> | null = null;
+type VideoJobData = VideoCreateJobData | VideoPollJobData | VideoStitchJobData;
 
-export function getVideoQueue(): Queue<VideoCreateJobData | VideoPollJobData> {
-  queue ??= new Queue<VideoCreateJobData | VideoPollJobData>(VIDEO_QUEUE_NAME, {
+let queue: Queue<VideoJobData> | null = null;
+
+export function getVideoQueue(): Queue<VideoJobData> {
+  queue ??= new Queue<VideoJobData>(VIDEO_QUEUE_NAME, {
     connection: getRedisConnection(),
   });
 
@@ -29,6 +35,22 @@ export async function enqueueVideoCreateJob(
 ): Promise<string> {
   const job = await getVideoQueue().add("video.create", data, {
     attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 5_000,
+    },
+    removeOnComplete: 100,
+    removeOnFail: 500,
+  });
+
+  return job.id ?? "";
+}
+
+export async function enqueueVideoStitchJob(
+  data: VideoStitchJobData,
+): Promise<string> {
+  const job = await getVideoQueue().add("video.stitch", data, {
+    attempts: 2,
     backoff: {
       type: "exponential",
       delay: 5_000,

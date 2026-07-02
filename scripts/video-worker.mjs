@@ -1,5 +1,14 @@
 import { Queue, Worker } from "bullmq";
 import pg from "pg";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdir, rm, writeFile, copyFile } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { randomUUID } from "node:crypto";
+
+const execFileAsync = promisify(execFile);
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
 const VIDEO_QUEUE_NAME = "video-generation";
 const POLL_DELAY_MS = Number(process.env.VIDEO_WORKER_POLL_DELAY_MS || "30000");
@@ -30,6 +39,11 @@ const worker = new Worker(
 
     if (job.name === "video.poll") {
       await pollWanTask(job.data);
+      return;
+    }
+
+    if (job.name === "video.stitch") {
+      await stitchFinalVideo(job.data);
       return;
     }
 
@@ -125,6 +139,121 @@ async function pollWanTask({ projectId, scene, taskId }) {
         removeOnFail: 500,
       },
     );
+  }
+}
+
+async function stitchFinalVideo({ projectId }) {
+  const now = new Date().toISOString();
+
+  await pool.query(
+    `UPDATE final_videos SET status = $1, updated_at = $2 WHERE project_id = $3`,
+    ["RUNNING", now, projectId],
+  );
+
+  const { rows } = await pool.query(
+    `SELECT scene, status, video_url FROM video_jobs WHERE project_id = $1 ORDER BY scene`,
+    [projectId],
+  );
+
+  const missingOrFailed = rows.length < 5 || rows.some((row) => row.status !== "SUCCEEDED" || !row.video_url);
+
+  if (missingOrFailed) {
+    await updateFinalVideo(projectId, {
+      status: "FAILED",
+      errorMessage: "Not all 5 scenes have a successful video yet.",
+    });
+    return;
+  }
+
+  const tempDir = path.join(os.tmpdir(), `dramacommerce-stitch-${projectId}`);
+
+  try {
+    await mkdir(tempDir, { recursive: true });
+
+    const clipPaths = [];
+
+    for (const row of rows) {
+      const clipPath = path.join(tempDir, `scene-${row.scene}.mp4`);
+      await downloadFile(row.video_url, clipPath);
+      clipPaths.push(clipPath);
+    }
+
+    const listPath = path.join(tempDir, "list.txt");
+    const listContent = clipPaths
+      .map((clipPath) => `file '${clipPath.replace(/'/g, "'\\''")}'`)
+      .join("\n");
+    await writeFile(listPath, listContent, "utf8");
+
+    const outputFilename = `${randomUUID()}.mp4`;
+    const tempOutputPath = path.join(tempDir, outputFilename);
+
+    await runFfmpegConcat(listPath, tempOutputPath);
+
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    await copyFile(tempOutputPath, path.join(UPLOAD_DIR, outputFilename));
+
+    await updateFinalVideo(projectId, {
+      status: "SUCCEEDED",
+      videoUrl: `/uploads/${outputFilename}`,
+    });
+  } catch (error) {
+    await updateFinalVideo(projectId, {
+      status: "FAILED",
+      errorMessage: error instanceof Error ? error.message : "Unknown stitching error.",
+    });
+
+    throw error;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function updateFinalVideo(projectId, { status, videoUrl, errorMessage }) {
+  await pool.query(
+    `
+    UPDATE final_videos
+    SET status = $1,
+        video_url = $2,
+        error_message = $3,
+        updated_at = $4
+    WHERE project_id = $5
+  `,
+    [status, videoUrl ?? null, errorMessage ?? null, new Date().toISOString(), projectId],
+  );
+}
+
+async function downloadFile(url, destPath) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to download clip: ${response.status} ${response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  await writeFile(destPath, Buffer.from(arrayBuffer));
+}
+
+async function runFfmpegConcat(listPath, outputPath) {
+  const baseArgs = ["-y", "-f", "concat", "-safe", "0", "-i", listPath];
+
+  try {
+    await execFileAsync("ffmpeg", [...baseArgs, "-c", "copy", outputPath]);
+  } catch (copyError) {
+    console.warn(
+      "ffmpeg stream-copy concat failed, retrying with re-encode:",
+      copyError.message,
+    );
+
+    await execFileAsync("ffmpeg", [
+      ...baseArgs,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-c:a",
+      "aac",
+      outputPath,
+    ]);
   }
 }
 

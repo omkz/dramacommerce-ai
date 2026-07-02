@@ -1,6 +1,6 @@
 # DramaCommerce AI
 
-DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a first real video clip using Qwen/Wan on Alibaba Cloud.
+DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene video clip using Qwen/Wan on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
 
 ## Features
 
@@ -10,8 +10,9 @@ DramaCommerce AI is an AI showrunner for short product drama ads. A merchant upl
 - Postgres project and video job persistence
 - Redis/BullMQ background queue for Wan video jobs
 - Local image storage in `uploads/`
-- Wan text-to-video task creation for Scene 1
+- Wan text-to-video task creation for any or all 5 scenes
 - Worker-driven video task polling and video preview
+- ffmpeg-based stitching of all 5 scene clips into one final video
 - Dockerfile ready for Alibaba Cloud ECS
 
 ## Tech Stack
@@ -48,6 +49,8 @@ Run the video worker in a second terminal when testing Wan video generation:
 ```bash
 pnpm run worker:video
 ```
+
+The worker shells out to `ffmpeg` to stitch the 5 scene clips into a final video, so it must be installed locally (e.g. `apt-get install ffmpeg`, `brew install ffmpeg`) — the Docker image already includes it.
 
 > **Without this running, "Generate Video" clicks stay stuck at `QUEUED` forever.**
 > The web app only enqueues a Redis/BullMQ job; a separate `worker:video`

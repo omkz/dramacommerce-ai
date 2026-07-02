@@ -104,3 +104,15 @@ export const videoJobs = pgTable(
     index("video_jobs_next_poll_at_idx").on(table.nextPollAt),
   ],
 );
+
+export const finalVideos = pgTable("final_videos", {
+  projectId: text("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  videoUrl: text("video_url"),
+  errorMessage: text("error_message"),
+  queueJobId: text("queue_job_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});

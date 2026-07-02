@@ -11,10 +11,16 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   getProject,
   saveVideoJob,
+  saveFinalVideo,
+  type SavedProject,
 } from "~/services/project-store.server";
 import { queryWanVideoTask } from "~/services/wan-video.server";
-import { enqueueVideoCreateJob } from "~/services/video-queue.server";
+import {
+  enqueueVideoCreateJob,
+  enqueueVideoStitchJob,
+} from "~/services/video-queue.server";
 import { requireUser } from "~/services/auth.server";
+import type { StoryboardScene } from "~/types/showrunner";
 
 const pipelineStages = [
   {
@@ -72,6 +78,69 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
+
+  if (intent === "create-all-video-tasks") {
+    const scenesToCreate = project.showPlan.storyboard.filter(
+      (scene) => !project.videoJobs?.some((job) => job.scene === scene.scene),
+    );
+
+    const failures: number[] = [];
+
+    for (const scene of scenesToCreate) {
+      try {
+        await createVideoJobForScene(projectId, user.id, scene);
+      } catch (error) {
+        console.error(`Failed to enqueue video job for scene ${scene.scene}:`, error);
+        failures.push(scene.scene);
+      }
+    }
+
+    if (failures.length > 0) {
+      return {
+        error: `Unable to queue video for scene(s) ${failures.join(", ")}. Check Redis/BullMQ configuration and try again.`,
+      };
+    }
+
+    return redirect(`/projects/${projectId}`);
+  }
+
+  if (intent === "create-stitch-task") {
+    const allScenesSucceeded =
+      project.showPlan.storyboard.length > 0 &&
+      project.showPlan.storyboard.every((scene) =>
+        project.videoJobs?.some(
+          (job) => job.scene === scene.scene && job.status === "SUCCEEDED",
+        ),
+      );
+
+    if (!allScenesSucceeded) {
+      throw new Response("All scenes must have a successful video before stitching", {
+        status: 400,
+      });
+    }
+
+    try {
+      const queueJobId = await enqueueVideoStitchJob({ projectId });
+      const now = new Date().toISOString();
+
+      await saveFinalVideo(projectId, user.id, {
+        status: "QUEUED",
+        queueJobId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return redirect(`/projects/${projectId}`);
+    } catch (error) {
+      console.error("Failed to enqueue stitch job:", error);
+
+      return {
+        error:
+          "Unable to queue the final video. Check Redis/BullMQ configuration and try again.",
+      };
+    }
+  }
+
   const sceneNumber = Number(formData.get("scene") || "1");
 
   const scene = project.showPlan.storyboard.find(
@@ -84,25 +153,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (intent === "create-video-task") {
     try {
-      const queueJobId = await enqueueVideoCreateJob({
-        projectId,
-        scene: scene.scene,
-        prompt: scene.videoPrompt,
-      });
-
-      const now = new Date().toISOString();
-
-      await saveVideoJob(projectId, user.id, {
-        scene: scene.scene,
-        provider: "wan",
-        queueJobId,
-        status: "QUEUED",
-        prompt: scene.videoPrompt,
-        attempts: 0,
-        nextPollAt: new Date(Date.now() + 30_000).toISOString(),
-        createdAt: now,
-        updatedAt: now,
-      });
+      await createVideoJobForScene(projectId, user.id, scene);
 
       return redirect(`/projects/${projectId}`);
     } catch (error) {
@@ -156,6 +207,32 @@ export async function action({ request, params }: ActionFunctionArgs) {
   throw new Response("Invalid intent", { status: 400 });
 }
 
+async function createVideoJobForScene(
+  projectId: string,
+  userId: string,
+  scene: StoryboardScene,
+): Promise<SavedProject> {
+  const queueJobId = await enqueueVideoCreateJob({
+    projectId,
+    scene: scene.scene,
+    prompt: scene.videoPrompt,
+  });
+
+  const now = new Date().toISOString();
+
+  return saveVideoJob(projectId, userId, {
+    scene: scene.scene,
+    provider: "wan",
+    queueJobId,
+    status: "QUEUED",
+    prompt: scene.videoPrompt,
+    attempts: 0,
+    nextPollAt: new Date(Date.now() + 30_000).toISOString(),
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 function getNextVideoPollAt(status: string): string | undefined {
   if (status === "QUEUED" || status === "PENDING" || status === "RUNNING" || status === "UNKNOWN") {
     return new Date(Date.now() + 30_000).toISOString();
@@ -179,13 +256,17 @@ export default function ProjectDetail() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const result = project.showPlan;
-  const firstScene = result.storyboard[0];
-  const firstSceneVideoJob = project.videoJobs?.find(
-    (job) => job.scene === firstScene?.scene,
-  );
   const pendingIntent = navigation.formData?.get("intent");
-  const isCreatingVideo = pendingIntent === "create-video-task";
-  const isRefreshingVideo = pendingIntent === "refresh-video-task";
+  const pendingScene = navigation.formData?.get("scene");
+  const isCreatingAllVideos = pendingIntent === "create-all-video-tasks";
+  const isStitchingFinalVideo = pendingIntent === "create-stitch-task";
+  const allScenesSucceeded =
+    result.storyboard.length > 0 &&
+    result.storyboard.every((scene) =>
+      project.videoJobs?.some(
+        (job) => job.scene === scene.scene && job.status === "SUCCEEDED",
+      ),
+    );
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -305,141 +386,181 @@ export default function ProjectDetail() {
             <p className="leading-7 text-slate-300">{result.voiceOver}</p>
           </ResultCard>
 
-          {firstScene ? (
-            <ResultCard title="Generated Video Clip">
-              <div className="space-y-4">
-                <p className="text-sm leading-6 text-slate-300">
-                  Generate a real video clip from Scene 1 using Wan text-to-video.
-                  This keeps generation cost predictable before queued multi-scene
-                  generation is enabled.
-                </p>
-
-                {actionData?.error ? (
-                  <p className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-100">
-                    {actionData.error}
-                  </p>
-                ) : null}
-
-                {firstSceneVideoJob?.videoUrl ? (
-                  <video
-                    src={firstSceneVideoJob.videoUrl}
-                    controls
-                    className="w-full rounded-xl border border-white/10 bg-black"
-                  />
-                ) : null}
-
-                {firstSceneVideoJob ? (
-                  <div className="rounded-xl border border-white/10 bg-slate-900 p-4">
-                    <p className="text-sm text-slate-300">
-                      Status:{" "}
-                      <span className="font-semibold text-white">
-                        {firstSceneVideoJob.status}
-                      </span>
-                    </p>
-
-                    {firstSceneVideoJob.taskId ? (
-                      <p className="mt-2 break-all text-xs text-slate-500">
-                        Task ID: {firstSceneVideoJob.taskId}
-                      </p>
-                    ) : null}
-
-                    {firstSceneVideoJob.queueJobId ? (
-                      <p className="mt-2 break-all text-xs text-slate-500">
-                        Queue Job ID: {firstSceneVideoJob.queueJobId}
-                      </p>
-                    ) : null}
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Last updated: {new Date(firstSceneVideoJob.updatedAt).toLocaleString()}
-                    </p>
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Poll attempts: {firstSceneVideoJob.attempts}
-                    </p>
-
-                    {firstSceneVideoJob.nextPollAt ? (
-                      <p className="mt-2 text-xs text-slate-500">
-                        Next worker poll:{" "}
-                        {new Date(firstSceneVideoJob.nextPollAt).toLocaleString()}
-                      </p>
-                    ) : null}
-
-                    {firstSceneVideoJob.errorMessage ? (
-                      <p className="mt-2 text-sm text-red-300">
-                        {firstSceneVideoJob.errorMessage}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="flex flex-wrap gap-3">
-                  {!firstSceneVideoJob ? (
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="create-video-task" />
-                      <input type="hidden" name="scene" value={firstScene.scene} />
-                      <button
-                        type="submit"
-                        disabled={isCreatingVideo}
-                        className="rounded-xl bg-white px-5 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
-                      >
-                        {isCreatingVideo
-                          ? "Creating video task..."
-                          : "Generate Video for Scene 1"}
-                      </button>
-                    </Form>
-                  ) : (
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="refresh-video-task" />
-                      <input type="hidden" name="scene" value={firstScene.scene} />
-                      <button
-                        type="submit"
-                        disabled={isRefreshingVideo}
-                        className="rounded-xl border border-white/15 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
-                      >
-                        {isRefreshingVideo
-                          ? "Refreshing status..."
-                          : "Refresh Video Status"}
-                      </button>
-                    </Form>
-                  )}
-                </div>
-
-                <div className="rounded-xl bg-indigo-400/10 p-4 text-sm leading-6 text-indigo-100">
-                  <span className="font-semibold text-white">Scene 1 prompt:</span>{" "}
-                  {firstScene.videoPrompt}
-                </div>
-              </div>
-            </ResultCard>
+          {actionData?.error ? (
+            <p className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-100">
+              {actionData.error}
+            </p>
           ) : null}
 
-          <ResultCard title="Storyboard">
+          <ResultCard title="Final Drama Ad">
             <div className="space-y-4">
-              {result.storyboard.map((scene) => (
-                <div
-                  key={scene.scene}
-                  className="rounded-xl border border-white/10 bg-slate-900 p-4"
-                >
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Scene {scene.scene} · {scene.duration}
+              <p className="text-sm leading-6 text-slate-300">
+                Once all 5 scenes have a successful video, stitch them into one
+                downloadable clip ready to post to TikTok, Reels, or Shorts.
+              </p>
+
+              {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
+                <video
+                  src={project.finalVideo.videoUrl}
+                  controls
+                  className="w-full rounded-xl border border-white/10 bg-black"
+                />
+              ) : null}
+
+              {project.finalVideo ? (
+                <div className="rounded-xl border border-white/10 bg-slate-900 p-4">
+                  <p className="text-sm text-slate-300">
+                    Status:{" "}
+                    <span className="font-semibold text-white">
+                      {project.finalVideo.status}
+                    </span>
                   </p>
 
-                  <h3 className="mt-1 font-bold">{scene.title}</h3>
-
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    {scene.visual}
+                  <p className="mt-2 text-xs text-slate-500">
+                    Last updated: {new Date(project.finalVideo.updatedAt).toLocaleString()}
                   </p>
 
-                  <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm text-slate-300">
-                    <span className="font-semibold text-white">Voice-over:</span>{" "}
-                    {scene.voiceOver}
-                  </p>
-
-                  <p className="mt-3 rounded-lg bg-indigo-400/10 p-3 text-sm leading-6 text-indigo-100">
-                    <span className="font-semibold text-white">Video prompt:</span>{" "}
-                    {scene.videoPrompt}
-                  </p>
+                  {project.finalVideo.errorMessage ? (
+                    <p className="mt-2 text-sm text-red-300">
+                      {project.finalVideo.errorMessage}
+                    </p>
+                  ) : null}
                 </div>
-              ))}
+              ) : null}
+
+              {allScenesSucceeded ? (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="create-stitch-task" />
+                  <button
+                    type="submit"
+                    disabled={isStitchingFinalVideo}
+                    className="rounded-xl bg-white px-5 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
+                  >
+                    {isStitchingFinalVideo
+                      ? "Queuing final video..."
+                      : project.finalVideo
+                        ? "Re-stitch Final Video"
+                        : "Stitch Final Video"}
+                  </button>
+                </Form>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  Generate a successful video for all 5 scenes below to unlock stitching.
+                </p>
+              )}
+            </div>
+          </ResultCard>
+
+          <ResultCard title="Storyboard">
+            <div className="space-y-5">
+              <Form method="post">
+                <input type="hidden" name="intent" value="create-all-video-tasks" />
+                <button
+                  type="submit"
+                  disabled={isCreatingAllVideos}
+                  className="rounded-xl border border-white/15 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
+                >
+                  {isCreatingAllVideos ? "Queuing all scenes..." : "Generate All Scenes"}
+                </button>
+              </Form>
+
+              <div className="space-y-4">
+                {result.storyboard.map((scene) => {
+                  const videoJob = project.videoJobs?.find(
+                    (job) => job.scene === scene.scene,
+                  );
+                  const isPendingForThisScene =
+                    pendingScene === String(scene.scene);
+                  const isCreatingVideo =
+                    isPendingForThisScene && pendingIntent === "create-video-task";
+                  const isRefreshingVideo =
+                    isPendingForThisScene && pendingIntent === "refresh-video-task";
+
+                  return (
+                    <div
+                      key={scene.scene}
+                      className="rounded-xl border border-white/10 bg-slate-900 p-4"
+                    >
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        Scene {scene.scene} · {scene.duration}
+                      </p>
+
+                      <h3 className="mt-1 font-bold">{scene.title}</h3>
+
+                      <p className="mt-3 text-sm leading-6 text-slate-300">
+                        {scene.visual}
+                      </p>
+
+                      <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm text-slate-300">
+                        <span className="font-semibold text-white">Voice-over:</span>{" "}
+                        {scene.voiceOver}
+                      </p>
+
+                      <p className="mt-3 rounded-lg bg-indigo-400/10 p-3 text-sm leading-6 text-indigo-100">
+                        <span className="font-semibold text-white">Video prompt:</span>{" "}
+                        {scene.videoPrompt}
+                      </p>
+
+                      {videoJob?.videoUrl ? (
+                        <video
+                          src={videoJob.videoUrl}
+                          controls
+                          className="mt-3 w-full rounded-xl border border-white/10 bg-black"
+                        />
+                      ) : null}
+
+                      {videoJob ? (
+                        <div className="mt-3 rounded-lg bg-white/5 p-3 text-xs text-slate-400">
+                          <p>
+                            Status:{" "}
+                            <span className="font-semibold text-slate-200">
+                              {videoJob.status}
+                            </span>
+                          </p>
+
+                          <p className="mt-1">
+                            Last updated: {new Date(videoJob.updatedAt).toLocaleString()}
+                          </p>
+
+                          <p className="mt-1">Poll attempts: {videoJob.attempts}</p>
+
+                          {videoJob.errorMessage ? (
+                            <p className="mt-1 text-red-300">{videoJob.errorMessage}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {!videoJob ? (
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="create-video-task" />
+                            <input type="hidden" name="scene" value={scene.scene} />
+                            <button
+                              type="submit"
+                              disabled={isCreatingVideo}
+                              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+                            >
+                              {isCreatingVideo ? "Creating video task..." : "Generate Video"}
+                            </button>
+                          </Form>
+                        ) : (
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="refresh-video-task" />
+                            <input type="hidden" name="scene" value={scene.scene} />
+                            <button
+                              type="submit"
+                              disabled={isRefreshingVideo}
+                              className="rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                            >
+                              {isRefreshingVideo ? "Refreshing status..." : "Refresh Status"}
+                            </button>
+                          </Form>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </ResultCard>
 

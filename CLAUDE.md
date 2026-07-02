@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-DramaCommerce AI is a React Router 8 full-stack app. A merchant uploads a product image plus a short brief (audience, mood, platform, duration); the app runs a Qwen-powered AI "showrunner" pipeline that produces a story concept, hook, voice-over, a 5-scene storyboard with video prompts, an editing timeline, a social caption/CTA, and can kick off a real text-to-video render for scene 1 via Alibaba Cloud's Wan model.
+DramaCommerce AI is a React Router 8 full-stack app. A merchant uploads a product image plus a short brief (audience, mood, platform, duration); the app runs a Qwen-powered AI "showrunner" pipeline that produces a story concept, hook, voice-over, a 5-scene storyboard with video prompts, an editing timeline, a social caption/CTA, can kick off real text-to-video renders for each scene via Alibaba Cloud's Wan model, and stitches the 5 successful clips into one final drama ad with ffmpeg.
 
 ## Commands
 
@@ -16,6 +16,8 @@ Package manager is **pnpm** (see `pnpm-lock.yaml` and the Dockerfile).
 - `pnpm run start` — serve the production build (`react-router-serve ./build/server/index.js`)
 
 There is no test suite and no lint script configured in `package.json`.
+
+`scripts/video-worker.mjs` (`pnpm run worker:video`) shells out to `ffmpeg` for the final-video stitch step — it must be installed and on `PATH` wherever the worker runs (already handled in the Docker image via `apk add ffmpeg`, but needs a manual install for local dev).
 
 ## Environment
 
@@ -37,11 +39,11 @@ If Qwen env vars are missing or the Qwen call fails, generation returns an error
    - `agents/prompt-agent.server.ts` — scenes → `StoryboardScene[]` (adds a Wan-ready `videoPrompt` per scene)
    - `agents/editor-agent.server.ts` — storyboard → `EditorPackage` (timeline, caption, CTA)
 3. Failures bubble to the `/generate` action, which shows an error instead of saving a project.
-4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for scene 1 only (`intent=create-video-task` / `intent=refresh-video-task` form actions call `services/wan-video.server.ts`, and job state is stored via `services/project-store.server.ts#saveVideoJob`). Only scene 1 gets a video job in the current product flow to keep generation cost predictable; queued multi-scene generation is the production roadmap.
+4. `routes/projects.tsx` lists saved projects; `routes/projects.$projectId.tsx` shows one project's full plan and drives Wan video generation for any/all scenes (`intent=create-video-task` / `intent=refresh-video-task` / `intent=create-all-video-tasks` form actions call `services/wan-video.server.ts`, job state stored via `services/project-store.server.ts#saveVideoJob`). Once all 5 scenes reach `SUCCEEDED`, `intent=create-stitch-task` enqueues a `video.stitch` BullMQ job; `scripts/video-worker.mjs` downloads the 5 Wan clips, concatenates them with `ffmpeg` (stream-copy first, re-encode fallback if codecs mismatch), and writes the result to `uploads/`. Stitch status/output is tracked in the `final_videos` table (one row per project) via `services/project-store.server.ts#saveFinalVideo`.
 
 ### Storage
 
-`services/project-store.server.ts` persists projects and video jobs to Postgres through Drizzle (`app/db/schema.ts`, `services/db.server.ts`). Migrations live in `drizzle/` and should be applied with `pnpm run db:migrate` before starting web or worker processes. `projects.show_plan` is stored as JSONB, and `video_jobs` stores provider, queue job ID, Wan task ID, status, attempts, polling timestamps, output URL, and error metadata. Uploaded images are written to `uploads/` on local disk and served back through `routes/uploads.$filename.tsx`, which guards against path traversal by rejecting filenames containing `/` or `..`. `uploads/` is gitignored and should move to OSS for production scale.
+`services/project-store.server.ts` persists projects and video jobs to Postgres through Drizzle (`app/db/schema.ts`, `services/db.server.ts`). Migrations live in `drizzle/` and should be applied with `pnpm run db:migrate` before starting web or worker processes. `projects.show_plan` is stored as JSONB, `video_jobs` stores per-scene provider, queue job ID, Wan task ID, status, attempts, polling timestamps, output URL, and error metadata, and `final_videos` stores the stitched-output status/URL per project. Uploaded product images and stitched final videos are written to `uploads/` on local disk and served back through `routes/uploads.$filename.tsx`, which guards against path traversal by rejecting filenames containing `/` or `..`. `uploads/` is gitignored and should move to OSS for production scale.
 
 ### Types
 

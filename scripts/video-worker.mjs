@@ -156,8 +156,6 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver }) {
 }
 
 async function narrateAndMuxScene(videoUrl, voiceOver, projectId, scene) {
-  const audioUrl = await synthesizeVoiceOver(voiceOver);
-
   const tempDir = path.join(os.tmpdir(), `dramacommerce-narrate-${projectId}-${scene}`);
 
   try {
@@ -165,7 +163,15 @@ async function narrateAndMuxScene(videoUrl, voiceOver, projectId, scene) {
 
     const videoPath = path.join(tempDir, "video.mp4");
     const audioPath = path.join(tempDir, "audio.mp3");
-    await downloadFile(videoUrl, videoPath);
+
+    // Downloading the Wan clip and synthesizing the voice-over are
+    // independent — run them concurrently instead of waiting on TTS
+    // before even starting the (much larger) video download.
+    const [, audioUrl] = await Promise.all([
+      downloadFile(videoUrl, videoPath),
+      synthesizeVoiceOver(voiceOver),
+    ]);
+
     await downloadFile(audioUrl, audioPath);
 
     const outputFilename = `${randomUUID()}.mp4`;
@@ -278,13 +284,16 @@ async function stitchFinalVideo({ projectId }) {
   try {
     await mkdir(tempDir, { recursive: true });
 
-    const clipPaths = [];
-
-    for (const row of rows) {
-      const clipPath = path.join(tempDir, `scene-${row.scene}.mp4`);
-      await downloadFile(row.video_url, clipPath);
-      clipPaths.push(clipPath);
-    }
+    // Downloaded concurrently — Promise.all preserves the input order
+    // (already `ORDER BY scene` from the query) regardless of which
+    // download finishes first, so the concat list stays in scene order.
+    const clipPaths = await Promise.all(
+      rows.map(async (row) => {
+        const clipPath = path.join(tempDir, `scene-${row.scene}.mp4`);
+        await downloadFile(row.video_url, clipPath);
+        return clipPath;
+      }),
+    );
 
     const listPath = path.join(tempDir, "list.txt");
     const listContent = clipPaths

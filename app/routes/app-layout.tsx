@@ -12,22 +12,25 @@ export default function AppLayout() {
   const { user } = useLoaderData<typeof loader>();
 
   return (
-    <div className="bg-slate-950">
-      <header className="border-b border-white/10">
+    <div className="bg-ink">
+      <header className="border-b border-paper/10 bg-panel">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link
-            to="/"
-            className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300"
-          >
-            DramaCommerce AI
+          <Link to="/" className="flex items-center gap-3">
+            <span
+              aria-hidden
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-[repeating-linear-gradient(-45deg,var(--color-bone)_0,var(--color-bone)_3px,var(--color-ink)_3px,var(--color-ink)_6px)]"
+            />
+            <span className="font-display text-lg font-semibold italic tracking-tight text-bone">
+              DramaCommerce<span className="text-gold not-italic">.</span>
+            </span>
           </Link>
 
           {user ? (
             <div className="flex items-center gap-4 text-sm">
-              <span className="text-slate-300">{user.name ?? user.email}</span>
+              <span className="text-ash">{user.name ?? user.email}</span>
               <a
                 href="/auth/signout"
-                className="rounded-lg border border-white/15 px-3 py-1.5 font-semibold text-white transition hover:bg-white/10"
+                className="rounded border border-paper/15 px-3 py-1.5 font-semibold text-bone transition hover:bg-paper/10"
               >
                 Sign out
               </a>
@@ -35,7 +38,7 @@ export default function AppLayout() {
           ) : (
             <a
               href="/auth/signin?callbackUrl=/projects"
-              className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+              className="rounded bg-gold px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-gold/85"
             >
               Sign in with Google
             </a>

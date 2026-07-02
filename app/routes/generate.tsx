@@ -33,11 +33,11 @@ const DURATION_OPTIONS = new Set([
     "60 seconds",
 ]);
 
-const pipelineStages = [
-    "Story Agent",
-    "Director Agent",
-    "Prompt Agent",
-    "Editor Agent",
+const crew = [
+    { role: "Story Agent", job: "Writes the concept, hook, and voice-over" },
+    { role: "Director Agent", job: "Blocks the five-scene storyboard" },
+    { role: "Prompt Agent", job: "Writes Wan-ready video prompts per scene" },
+    { role: "Editor Agent", job: "Cuts the timeline, caption, and CTA" },
 ];
 
 export function meta() {
@@ -191,37 +191,42 @@ export default function Generate() {
     const isGenerating = navigation.state !== "idle";
 
     return (
-        <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
+        <main className="min-h-screen bg-ink px-6 py-10 text-bone">
             <div className="mx-auto max-w-6xl">
-                <a href="/" className="text-sm text-slate-400 hover:text-white">
+                <a href="/" className="text-sm text-ash hover:text-bone">
                     ← Back to home
                 </a>
 
-                <div className="mt-10 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+                <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_0.8fr]">
                     <section>
-                        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            DramaCommerce AI
+                        <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
+                            Production Brief
                         </p>
 
-                        <h1 className="mt-4 text-4xl font-bold tracking-tight md:text-5xl">
-                            Generate a product drama ad
+                        <h1 className="mt-4 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
+                            Call the next production
                         </h1>
 
-                        <p className="mt-4 max-w-2xl text-slate-300">
+                        <p className="mt-4 max-w-xl text-ash">
                             Upload one product photo and describe the audience, mood, and
-                            platform. Four Qwen agents will turn it into a story, storyboard,
-                            Wan video prompts, voice-over, subtitles, and editing timeline.
+                            platform. Four agents turn it into a story, storyboard, video
+                            prompts, and edit plan.
                         </p>
 
                         <Form
                             method="post"
                             encType="multipart/form-data"
-                            className="mt-8 space-y-5 rounded-2xl border border-white/10 bg-white/5 p-6"
+                            className="mt-8 space-y-6 rounded-sm border border-paper-dim bg-paper p-8 text-ink shadow-2xl"
                         >
+                            <div className="flex items-center justify-between border-b border-ink/10 pb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-ink/50">
+                                <span>Call Sheet</span>
+                                <span>Scene Count · 05</span>
+                            </div>
+
                             <div>
                                 <label
                                     htmlFor="productName"
-                                    className="block text-sm font-medium text-slate-200"
+                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
                                 >
                                     Product name
                                 </label>
@@ -231,14 +236,14 @@ export default function Generate() {
                                     type="text"
                                     placeholder="Urban Runner Black Shoes"
                                     required
-                                    className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-white/30"
+                                    className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
                                 />
                             </div>
 
                             <div>
                                 <label
                                     htmlFor="productImage"
-                                    className="block text-sm font-medium text-slate-200"
+                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
                                 >
                                     Product image
                                 </label>
@@ -247,14 +252,14 @@ export default function Generate() {
                                     name="productImage"
                                     type="file"
                                     accept="image/*"
-                                    className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-white file:px-4 file:py-2 file:font-semibold file:text-slate-950"
+                                    className="mt-2 w-full text-sm text-ink/70 file:mr-4 file:rounded-sm file:border-0 file:bg-ink file:px-4 file:py-2 file:font-semibold file:text-bone"
                                 />
                             </div>
 
                             <div>
                                 <label
                                     htmlFor="targetAudience"
-                                    className="block text-sm font-medium text-slate-200"
+                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
                                 >
                                     Target audience
                                 </label>
@@ -264,7 +269,7 @@ export default function Generate() {
                                     type="text"
                                     placeholder="Office workers, commuters, young professionals"
                                     required
-                                    className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none placeholder:text-slate-500 focus:border-white/30"
+                                    className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
                                 />
                             </div>
 
@@ -272,14 +277,14 @@ export default function Generate() {
                                 <div>
                                     <label
                                         htmlFor="mood"
-                                        className="block text-sm font-medium text-slate-200"
+                                        className="block font-mono text-xs uppercase tracking-widest text-ink/60"
                                     >
                                         Mood
                                     </label>
                                     <select
                                         id="mood"
                                         name="mood"
-                                        className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-white/30"
+                                        className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
                                     >
                                         <option>Cinematic</option>
                                         <option>Funny</option>
@@ -292,14 +297,14 @@ export default function Generate() {
                                 <div>
                                     <label
                                         htmlFor="platform"
-                                        className="block text-sm font-medium text-slate-200"
+                                        className="block font-mono text-xs uppercase tracking-widest text-ink/60"
                                     >
                                         Platform
                                     </label>
                                     <select
                                         id="platform"
                                         name="platform"
-                                        className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-white/30"
+                                        className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
                                     >
                                         <option>TikTok</option>
                                         <option>Instagram Reels</option>
@@ -310,14 +315,14 @@ export default function Generate() {
                                 <div>
                                     <label
                                         htmlFor="duration"
-                                        className="block text-sm font-medium text-slate-200"
+                                        className="block font-mono text-xs uppercase tracking-widest text-ink/60"
                                     >
                                         Duration
                                     </label>
                                     <select
                                         id="duration"
                                         name="duration"
-                                        className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-white/30"
+                                        className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
                                     >
                                         <option>15 seconds</option>
                                         <option>30 seconds</option>
@@ -330,20 +335,20 @@ export default function Generate() {
                             <button
                                 type="submit"
                                 disabled={isGenerating}
-                                className="w-full rounded-xl bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
+                                className="w-full rounded-sm bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
                             >
-                                {isGenerating ? "Generating with Qwen..." : "Generate Show Plan"}
+                                {isGenerating ? "Rolling cameras..." : "Call Action"}
                             </button>
 
                             {isGenerating ? (
-                                <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
+                                <div className="rounded-sm border border-ink/15 bg-ink/5 p-4 text-sm leading-6 text-ink/70">
                                     Running the Story, Director, Prompt, and Editor agents. This
                                     can take a little longer than a single model call.
                                 </div>
                             ) : null}
 
                             {actionData?.error ? (
-                                <p className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-100">
+                                <p className="rounded-sm border border-flame/40 bg-flame/10 p-4 text-sm leading-6 text-flame">
                                     {actionData.error}
                                 </p>
                             ) : null}
@@ -351,25 +356,38 @@ export default function Generate() {
                     </section>
 
                     <aside className="space-y-5">
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-                            <h2 className="text-xl font-bold">Showrunner pipeline</h2>
-                            <p className="mt-4 text-sm leading-6 text-slate-400">
-                                Successful Qwen generations are saved as projects and opened
-                                automatically. If Qwen is unavailable, no mock project is created.
+                        <div className="rounded-lg border border-paper/10 bg-panel p-6">
+                            <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
+                                On Set
                             </p>
 
-                            <div className="mt-5 space-y-3">
-                                {pipelineStages.map((stage, index) => (
+                            <h2 className="mt-3 font-display text-xl font-medium text-bone">
+                                The crew
+                            </h2>
+
+                            <p className="mt-3 text-sm leading-6 text-ash">
+                                Successful Qwen generations are saved as projects and opened
+                                automatically. If Qwen is unavailable, no mock project is
+                                created.
+                            </p>
+
+                            <div className="mt-6 space-y-3">
+                                {crew.map((member, index) => (
                                     <div
-                                        key={stage}
-                                        className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-900 p-3"
+                                        key={member.role}
+                                        className="flex items-start gap-3 rounded-sm border border-paper/10 bg-panel-raised p-3"
                                     >
-                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-sm font-bold text-emerald-200">
+                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold/40 font-mono text-xs font-semibold text-gold">
                                             {index + 1}
                                         </span>
-                                        <span className="text-sm font-medium text-slate-200">
-                                            {stage}
-                                        </span>
+                                        <div>
+                                            <p className="text-sm font-semibold text-bone">
+                                                {member.role}
+                                            </p>
+                                            <p className="mt-0.5 text-xs leading-5 text-ash">
+                                                {member.job}
+                                            </p>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

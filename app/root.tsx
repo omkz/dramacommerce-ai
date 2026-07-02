@@ -19,7 +19,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
   },
 ];
 
@@ -62,14 +62,27 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
+    <main className="min-h-screen bg-ink px-6 py-20 text-bone">
+      <div className="mx-auto max-w-2xl text-center">
+        <p className="font-mono text-xs uppercase tracking-[0.3em] text-flame">
+          Production Halted
+        </p>
+        <h1 className="mt-4 font-display text-5xl font-medium text-bone">
+          {message}
+        </h1>
+        <p className="mt-4 text-ash">{details}</p>
+        {stack && (
+          <pre className="mt-8 w-full overflow-x-auto rounded-lg border border-paper/10 bg-panel p-4 text-left font-mono text-xs text-ash">
+            <code>{stack}</code>
+          </pre>
+        )}
+        <a
+          href="/"
+          className="mt-8 inline-flex rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
+        >
+          Back to Home
+        </a>
+      </div>
     </main>
   );
 }

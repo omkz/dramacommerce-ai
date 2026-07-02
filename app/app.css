@@ -3,13 +3,75 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-ink: #14100d;
+  --color-panel: #211a15;
+  --color-panel-raised: #2b221b;
+  --color-paper: #f3e9d8;
+  --color-paper-dim: #e8dac2;
+  --color-ash: #9c8f7e;
+  --color-bone: #f5eee1;
+  --color-gold: #d6a54c;
+  --color-flame: #ff4b36;
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
+  background-color: var(--color-ink);
+  color: var(--color-bone);
+  color-scheme: dark;
+}
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
+::selection {
+  background-color: var(--color-flame);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+/* Film-strip sprocket perforation — a row of punched-through holes along an
+   edge, used to frame storyboard scene cards. The hole color must match
+   whatever sits behind the strip (usually --color-ink, the page background). */
+.sprockets {
+  height: 14px;
+  background-image: radial-gradient(
+    circle at 10px 7px,
+    var(--color-ink) 4.5px,
+    transparent 5px
+  );
+  background-size: 24px 14px;
+  background-repeat: repeat-x;
+}
+
+.sprockets-panel {
+  background-image: radial-gradient(
+    circle at 10px 7px,
+    var(--color-panel) 4.5px,
+    transparent 5px
+  );
+}
+
+@keyframes tally-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tally-dot {
+  animation: tally-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tally-dot {
+    animation: none;
   }
 }

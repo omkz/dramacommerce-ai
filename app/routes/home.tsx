@@ -8,77 +8,118 @@ export function meta() {
   ];
 }
 
+const takes = [
+  {
+    take: "01",
+    title: "Upload the product",
+    body: "One photo, a product name, and a few lines on audience, mood, and platform.",
+  },
+  {
+    take: "02",
+    title: "Qwen directs the story",
+    body: "A Story, Director, and Prompt agent write the concept, hook, voice-over, and a 5-scene storyboard.",
+  },
+  {
+    take: "03",
+    title: "Wan shoots every scene",
+    body: "Each scene renders as real text-to-video footage, then stitches into one finished drama ad.",
+  },
+];
+
 export default function Home() {
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <section className="mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-6 py-20 text-center">
-        <div className="mb-6 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
-          AI Showrunner for Product Videos
+    <main className="bg-ink text-bone">
+      <section className="mx-auto max-w-6xl px-6 pb-20 pt-20 md:pt-28">
+        <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.3em] text-ash">
+          <span
+            aria-hidden
+            className="tally-dot h-2 w-2 rounded-full bg-flame"
+          />
+          Now Screening — AI Showrunner
         </div>
 
-        <h1 className="max-w-4xl text-5xl font-bold tracking-tight md:text-7xl">
-          Turn one product photo into a short drama ad.
+        <h1 className="mt-8 max-w-3xl font-display text-5xl font-medium leading-[1.05] tracking-tight text-bone md:text-7xl">
+          One product photo.
+          <br />
+          <span className="text-gold italic">Five scenes</span> of drama.
         </h1>
 
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-          DramaCommerce AI helps small merchants generate story concepts,
-          scripts, storyboards, video prompts, voice-over, subtitles, and an
-          editing timeline from a single product image.
+        <p className="mt-6 max-w-xl text-lg leading-8 text-ash">
+          DramaCommerce AI writes the story, storyboards the shots, and shoots
+          the footage — turning a single product photo into a short drama ad
+          ready for TikTok, Reels, or Shorts.
         </p>
 
-        <div className="mt-10 flex flex-col gap-4 sm:flex-row">
+        <div className="mt-10 flex flex-wrap items-center gap-5">
           <a
             href="/generate"
-            className="rounded-xl bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-200"
+            className="rounded bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
-            Generate Product Drama
+            Start a Production
           </a>
 
           <a
             href="/projects"
-            className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:bg-white/10"
+            className="rounded border border-paper/20 px-6 py-3 font-semibold text-bone transition hover:bg-paper/5"
           >
             View Projects
           </a>
 
           <a
             href="#how-it-works"
-            className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:bg-white/10"
+            className="text-sm font-medium text-ash underline decoration-paper/20 underline-offset-4 transition hover:text-bone"
           >
-            See how it works
+            See the shot list
           </a>
+        </div>
+
+        <div className="mt-20 overflow-hidden rounded-lg border border-paper/10 bg-panel">
+          <div className="sprockets" aria-hidden />
+
+          <div className="grid grid-cols-5 divide-x divide-paper/10">
+            {[1, 2, 3, 4, 5].map((scene) => (
+              <div
+                key={scene}
+                className="flex aspect-9/16 flex-col items-center justify-center gap-3 bg-panel-raised/40 p-4"
+              >
+                <span className="font-mono text-[10px] uppercase tracking-widest text-ash">
+                  Scene {String(scene).padStart(2, "0")}
+                </span>
+                <span className="h-8 w-8 rounded-full border border-gold/50" />
+              </div>
+            ))}
+          </div>
+
+          <div className="sprockets" aria-hidden />
         </div>
       </section>
 
       <section
         id="how-it-works"
-        className="mx-auto grid max-w-6xl gap-6 px-6 pb-20 md:grid-cols-3"
+        className="border-t border-paper/10 bg-panel/40"
       >
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <p className="text-sm font-semibold text-slate-400">Step 1</p>
-          <h2 className="mt-3 text-xl font-bold">Upload a product</h2>
-          <p className="mt-3 text-slate-300">
-            Start with one product image, product name, audience, mood, and
-            platform.
+        <div className="mx-auto max-w-6xl px-6 py-20">
+          <p className="font-mono text-xs uppercase tracking-[0.3em] text-ash">
+            The Shot List
           </p>
-        </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <p className="text-sm font-semibold text-slate-400">Step 2</p>
-          <h2 className="mt-3 text-xl font-bold">AI directs the story</h2>
-          <p className="mt-3 text-slate-300">
-            Qwen-powered agents create the concept, script, storyboard, and
-            scene-by-scene video prompts.
-          </p>
-        </div>
+          <h2 className="mt-3 font-display text-3xl font-medium text-bone md:text-4xl">
+            Three takes to a finished ad
+          </h2>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <p className="text-sm font-semibold text-slate-400">Step 3</p>
-          <h2 className="mt-3 text-xl font-bold">Export the ad plan</h2>
-          <p className="mt-3 text-slate-300">
-            Get voice-over, subtitles, social caption, CTA, and editing timeline
-            for TikTok, Reels, or Shorts.
-          </p>
+          <div className="mt-12 grid gap-px overflow-hidden rounded-lg border border-paper/10 bg-paper/10 md:grid-cols-3">
+            {takes.map((step) => (
+              <div key={step.take} className="bg-ink p-8">
+                <p className="font-mono text-sm text-gold">TAKE {step.take}</p>
+
+                <h3 className="mt-4 font-display text-xl font-medium text-bone">
+                  {step.title}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-ash">{step.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
     </main>

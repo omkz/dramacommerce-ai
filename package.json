@@ -7,8 +7,8 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node scripts/migrate.mjs",
-    "worker:video": "node scripts/video-worker.mjs",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "worker:video": "node --env-file-if-exists=.env scripts/video-worker.mjs",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc"
   },

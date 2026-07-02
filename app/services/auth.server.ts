@@ -32,6 +32,9 @@ export const authConfig: AuthConfig = {
   session: { strategy: "database" },
   secret: mustGetEnv("AUTH_SECRET"),
   trustHost: true,
+  pages: {
+    signIn: "/login",
+  },
   callbacks: {
     // Auth.js's default session callback strips everything but
     // name/email/image from session.user — add id back so callers can
@@ -70,8 +73,34 @@ export async function requireUser(request: Request): Promise<AuthenticatedUser> 
   if (!session?.user?.id) {
     const callbackUrl = new URL(request.url).pathname;
 
-    throw redirect(`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    throw redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
   return session.user as AuthenticatedUser;
+}
+
+// Custom-styled /login page needs a CSRF token to submit the real
+// /auth/signin/:provider POST (Auth.js's double-submit-cookie check
+// compares this value against the authjs.csrf-token cookie set below).
+// Reuses the same "replay against the internal /auth/* endpoint" trick as
+// getAuthSession — but this one also forwards Set-Cookie headers, since the
+// browser must actually receive the csrf cookie for the round trip to work.
+export async function getCsrfSetup(
+  request: Request,
+): Promise<{ csrfToken: string; setCookieHeaders: Headers }> {
+  const url = new URL(request.url);
+  const csrfRequest = new Request(`${url.origin}/auth/csrf`, {
+    headers: { cookie: request.headers.get("cookie") ?? "" },
+  });
+
+  const response = await Auth(csrfRequest, authConfig);
+  const body = (await response.json()) as { csrfToken: string };
+
+  const setCookieHeaders = new Headers();
+
+  for (const cookie of response.headers.getSetCookie()) {
+    setCookieHeaders.append("Set-Cookie", cookie);
+  }
+
+  return { csrfToken: body.csrfToken, setCookieHeaders };
 }

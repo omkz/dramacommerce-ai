@@ -36,12 +36,12 @@ export default function AppLayout() {
               </a>
             </div>
           ) : (
-            <a
-              href="/auth/signin?callbackUrl=/projects"
+            <Link
+              to="/login?callbackUrl=/projects"
               className="rounded bg-gold px-3 py-1.5 text-sm font-semibold text-ink transition hover:bg-gold/85"
             >
               Sign in with Google
-            </a>
+            </Link>
           )}
         </div>
       </header>

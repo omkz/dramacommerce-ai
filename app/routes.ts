@@ -10,4 +10,5 @@ export default [
   route("health", "routes/health.ts"),
   route("uploads/:filename", "routes/uploads.$filename.tsx"),
   route("auth/*", "routes/auth.$.tsx"),
+  route("login", "routes/login.tsx"),
 ] satisfies RouteConfig;

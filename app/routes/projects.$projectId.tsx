@@ -480,6 +480,30 @@ export default function ProjectDetail() {
               <SmallItem label="Platform" value={result.brief.platform} />
               <SmallItem label="Duration" value={result.brief.duration} />
             </div>
+
+            {result.brief.productDescription ||
+            result.brief.keySellingPoints ||
+            result.brief.offer ? (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {result.brief.productDescription ? (
+                  <SmallItem
+                    label="Description"
+                    value={result.brief.productDescription}
+                  />
+                ) : null}
+
+                {result.brief.keySellingPoints ? (
+                  <SmallItem
+                    label="Selling Points"
+                    value={result.brief.keySellingPoints}
+                  />
+                ) : null}
+
+                {result.brief.offer ? (
+                  <SmallItem label="Offer" value={result.brief.offer} />
+                ) : null}
+              </div>
+            ) : null}
           </ResultCard>
 
           <ResultCard title="Story Concept" eyebrow="Logline">

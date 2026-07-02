@@ -66,6 +66,7 @@ Rules:
 - Preserve scene numbers, titles, durations, visuals, and voice-over lines.
 - Add detailed videoPrompt text for realistic text-to-video generation, tailored to the exact resolution/aspect ratio/duration from get_wan_video_constraints.
 - Include camera movement, subject, setting, lighting, mood, and product visibility.
+- Make product appearance and benefits clear in the shot language, but avoid inventing unsupported logos, packaging, colors, or materials.
 - Avoid impossible product/logo details not present in the brief.
 `,
     tools: [GET_WAN_VIDEO_CONSTRAINTS_TOOL],

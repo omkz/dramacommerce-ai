@@ -31,6 +31,7 @@ Return JSON:
 Rules:
 - Timeline should be actionable for editing: scene timing, cuts, overlays, subtitles, sound/music notes.
 - Caption should fit ${brief.platform}.
+- Caption and CTA should mention the strongest product benefit or offer when provided.
 - CTA should be short and merchant-friendly.
 `,
   });

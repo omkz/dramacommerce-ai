@@ -59,6 +59,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const formData = await request.formData();
 
     const productName = getFormString(formData, "productName");
+    const productDescription = getFormString(formData, "productDescription");
+    const keySellingPoints = getFormString(formData, "keySellingPoints");
+    const offer = getFormString(formData, "offer");
     const targetAudience = getFormString(formData, "targetAudience");
     const mood = getFormString(formData, "mood");
     const platform = getFormString(formData, "platform");
@@ -66,6 +69,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const validationError = validateBriefFields({
         productName,
+        productDescription,
+        keySellingPoints,
+        offer,
         targetAudience,
         mood,
         platform,
@@ -96,6 +102,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const brief = {
         productName,
+        productDescription: productDescription || undefined,
+        keySellingPoints: keySellingPoints || undefined,
+        offer: offer || undefined,
         targetAudience,
         mood,
         platform,
@@ -133,12 +142,18 @@ function getFormString(formData: FormData, key: string): string {
 
 function validateBriefFields({
     productName,
+    productDescription,
+    keySellingPoints,
+    offer,
     targetAudience,
     mood,
     platform,
     duration,
 }: {
     productName: string;
+    productDescription: string;
+    keySellingPoints: string;
+    offer: string;
     targetAudience: string;
     mood: string;
     platform: string;
@@ -150,6 +165,18 @@ function validateBriefFields({
 
     if (!targetAudience) {
         return "Target audience is required.";
+    }
+
+    if (productDescription.length > 500) {
+        return "Product description must be 500 characters or fewer.";
+    }
+
+    if (keySellingPoints.length > 500) {
+        return "Key selling points must be 500 characters or fewer.";
+    }
+
+    if (offer.length > 180) {
+        return "Offer must be 180 characters or fewer.";
     }
 
     if (!MOOD_OPTIONS.has(mood)) {
@@ -264,6 +291,57 @@ export default function Generate() {
                                     accept="image/*"
                                     required
                                     className="mt-2 w-full text-sm text-ink/70 file:mr-4 file:rounded-sm file:border-0 file:bg-ink file:px-4 file:py-2 file:font-semibold file:text-bone"
+                                />
+                            </div>
+
+                            <div>
+                                <label
+                                    htmlFor="productDescription"
+                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                >
+                                    Product description
+                                </label>
+                                <textarea
+                                    id="productDescription"
+                                    name="productDescription"
+                                    rows={3}
+                                    maxLength={500}
+                                    placeholder="Lightweight running shoes with breathable mesh, cushioned sole, and a clean all-black look."
+                                    className="mt-2 w-full resize-y border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
+                                />
+                            </div>
+
+                            <div>
+                                <label
+                                    htmlFor="keySellingPoints"
+                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                >
+                                    Key selling points
+                                </label>
+                                <textarea
+                                    id="keySellingPoints"
+                                    name="keySellingPoints"
+                                    rows={3}
+                                    maxLength={500}
+                                    placeholder="Comfortable for long commutes, minimal style, durable outsole, easy to pair with workwear."
+                                    className="mt-2 w-full resize-y border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
+                                />
+                            </div>
+
+                            <div>
+                                <label
+                                    htmlFor="offer"
+                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                >
+                                    Offer or CTA context
+                                </label>
+                                <input
+                                    id="offer"
+                                    name="offer"
+                                    type="text"
+                                    maxLength={180}
+                                    placeholder="Launch week: 20% off, free shipping today"
+                                    className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
                                 />
                             </div>
 

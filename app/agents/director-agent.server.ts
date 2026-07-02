@@ -38,6 +38,7 @@ Rules:
 - Create exactly 5 scenes.
 - Make the pacing fit ${brief.duration}.
 - Include concrete shots, motion, product placement, and emotional beats.
+- Show the product's key selling points visually where possible, using only details supported by the brief.
 - Keep each voice-over line aligned with the story package.
 `,
   });

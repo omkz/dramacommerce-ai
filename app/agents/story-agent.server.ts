@@ -22,6 +22,8 @@ Return JSON:
 
 Rules:
 - Make the story relevant to the target audience.
+- Use the product description and key selling points as the reason the product matters in the drama.
+- If an offer is provided, make it feel natural in the payoff instead of forcing it into every line.
 - Keep the product visible but naturally integrated.
 - Write for ${brief.platform} in a ${brief.mood} mood.
 - The voice-over should fit ${brief.duration}.

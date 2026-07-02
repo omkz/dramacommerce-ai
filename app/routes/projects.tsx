@@ -121,6 +121,16 @@ export default function ProjectsIndex() {
                       {showPlan.concept}
                     </p>
 
+                    {showPlan.brief.offer ? (
+                      <p className="mt-3 rounded-sm border border-gold/20 bg-gold/10 p-3 text-xs font-medium leading-5 text-gold">
+                        {showPlan.brief.offer}
+                      </p>
+                    ) : showPlan.brief.keySellingPoints ? (
+                      <p className="mt-3 line-clamp-2 rounded-sm border border-paper/10 bg-panel-raised p-3 text-xs leading-5 text-ash">
+                        {showPlan.brief.keySellingPoints}
+                      </p>
+                    ) : null}
+
                     <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
                       <div className="rounded-sm border border-paper/10 bg-panel-raised p-3">
                         <p className="font-mono uppercase tracking-widest text-ash">

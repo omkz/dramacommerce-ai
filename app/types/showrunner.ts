@@ -1,5 +1,8 @@
 export type ProductBrief = {
   productName: string;
+  productDescription?: string;
+  keySellingPoints?: string;
+  offer?: string;
   targetAudience: string;
   mood: string;
   platform: string;

@@ -10,23 +10,19 @@ import {
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   getProject,
-  saveProject,
   saveVideoJob,
   saveFinalVideo,
   type SavedProject,
 } from "~/services/project-store.server";
 import { queryWanVideoTask } from "~/services/wan-video.server";
-import { generateShowPlan } from "~/services/showrunner.server";
 import {
   enqueueVideoCreateJob,
   enqueueVideoStitchJob,
 } from "~/services/video-queue.server";
 import { requireUser } from "~/services/auth.server";
 import {
-  checkGenerateRateLimit,
   checkVideoCreateRateLimit,
   checkVideoStitchRateLimit,
-  getClientIp,
 } from "~/services/rate-limit.server";
 import type { StoryboardScene } from "~/types/showrunner";
 
@@ -86,28 +82,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
-
-  if (intent === "regenerate-story") {
-    const rateLimitResult = await checkGenerateRateLimit(getClientIp(request));
-
-    if (!rateLimitResult.allowed) {
-      return { error: rateLimitResult.message };
-    }
-
-    try {
-      const newShowPlan = await generateShowPlan(project.showPlan.brief);
-      const newProject = await saveProject(newShowPlan, user.id);
-
-      return redirect(`/projects/${newProject.id}`);
-    } catch (error) {
-      console.error("Failed to regenerate show plan:", error);
-
-      return {
-        error:
-          "Unable to regenerate a show plan with Qwen. Try again later.",
-      };
-    }
-  }
 
   if (intent === "create-all-video-tasks") {
     const scenesToCreate = project.showPlan.storyboard.filter((scene) => {
@@ -330,7 +304,6 @@ export default function ProjectDetail() {
   const pendingScene = navigation.formData?.get("scene");
   const isCreatingAllVideos = pendingIntent === "create-all-video-tasks";
   const isStitchingFinalVideo = pendingIntent === "create-stitch-task";
-  const isRegenerating = pendingIntent === "regenerate-story";
   const allScenesSucceeded =
     result.storyboard.length > 0 &&
     result.storyboard.every((scene) =>
@@ -455,25 +428,6 @@ export default function ProjectDetail() {
 
           <ResultCard title="Voice-over">
             <p className="leading-7 text-slate-300">{result.voiceOver}</p>
-          </ResultCard>
-
-          <ResultCard title="Not Feeling This Take?">
-            <p className="text-sm leading-6 text-slate-300">
-              Regenerate the whole story from the same product photo and brief.
-              This creates a brand-new project so you can compare takes — this
-              project and its videos stay exactly as they are.
-            </p>
-
-            <Form method="post" className="mt-4">
-              <input type="hidden" name="intent" value="regenerate-story" />
-              <button
-                type="submit"
-                disabled={isRegenerating}
-                className="rounded-xl border border-white/15 px-5 py-3 font-semibold text-white transition hover:bg-white/10"
-              >
-                {isRegenerating ? "Regenerating with Qwen..." : "Regenerate as New Project"}
-              </button>
-            </Form>
           </ResultCard>
 
           {actionData?.error ? (

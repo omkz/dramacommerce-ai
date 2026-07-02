@@ -83,6 +83,23 @@ export async function getProject(
   return rowToProject(rows[0]);
 }
 
+export async function deleteProject(
+  id: string,
+  userId: string,
+): Promise<SavedProject | null> {
+  const project = await getProject(id, userId);
+
+  if (!project) {
+    return null;
+  }
+
+  await db
+    .delete(projects)
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)));
+
+  return project;
+}
+
 export async function saveVideoJob(
   projectId: string,
   userId: string,

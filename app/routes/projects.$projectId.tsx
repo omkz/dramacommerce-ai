@@ -10,11 +10,13 @@ import {
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   getProject,
+  deleteProject,
   saveVideoJob,
   saveFinalVideo,
   type SavedProject,
 } from "~/services/project-store.server";
 import { queryWanVideoTask } from "~/services/wan-video.server";
+import { deleteUploadedFile } from "~/services/image-upload.server";
 import {
   enqueueVideoCreateJob,
   enqueueVideoStitchJob,
@@ -82,6 +84,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
+
+  if (intent === "delete-project") {
+    const deleted = await deleteProject(projectId, user.id);
+
+    if (deleted) {
+      await deleteUploadedFile(deleted.showPlan.brief.imageUrl);
+      await deleteUploadedFile(deleted.finalVideo?.videoUrl);
+    }
+
+    return redirect("/projects");
+  }
 
   if (intent === "create-all-video-tasks") {
     const scenesToCreate = project.showPlan.storyboard.filter((scene) => {
@@ -332,6 +345,7 @@ export default function ProjectDetail() {
         new Date(job.updatedAt).getTime() >
         new Date(project.finalVideo!.updatedAt).getTime(),
     );
+  const isDeletingProject = pendingIntent === "delete-project";
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -341,9 +355,33 @@ export default function ProjectDetail() {
             ← Generate another product drama
           </Link>
 
-          <p className="text-sm text-slate-500">
-            Created at {new Date(project.createdAt).toLocaleString()}
-          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <p className="text-sm text-slate-500">
+              Created at {new Date(project.createdAt).toLocaleString()}
+            </p>
+
+            <Form
+              method="post"
+              onSubmit={(event) => {
+                if (
+                  !confirm(
+                    "Delete this project? This permanently removes its videos and cannot be undone.",
+                  )
+                ) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="intent" value="delete-project" />
+              <button
+                type="submit"
+                disabled={isDeletingProject}
+                className="rounded-lg border border-red-400/30 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-400/10"
+              >
+                {isDeletingProject ? "Deleting..." : "Delete Project"}
+              </button>
+            </Form>
+          </div>
         </div>
 
         <section className="mt-10">

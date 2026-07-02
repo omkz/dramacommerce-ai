@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -42,6 +42,22 @@ export async function saveUploadedImage(
     imageName: file.name,
     imageUrl: `/uploads/${filename}`,
   };
+}
+
+export async function deleteUploadedFile(
+  url: string | null | undefined,
+): Promise<void> {
+  if (!url || !url.startsWith("/uploads/")) {
+    return;
+  }
+
+  const filename = url.slice("/uploads/".length);
+
+  if (!filename || filename.includes("/") || filename.includes("..")) {
+    return;
+  }
+
+  await rm(path.join(UPLOAD_DIR, filename), { force: true });
 }
 
 function getSafeExtension(filename: string): string {

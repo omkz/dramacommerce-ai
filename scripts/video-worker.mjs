@@ -32,22 +32,27 @@ const queue = new Queue(VIDEO_QUEUE_NAME, { connection });
 const worker = new Worker(
   VIDEO_QUEUE_NAME,
   async (job) => {
-    if (job.name === "video.create") {
-      await createWanTask(job.data);
-      return;
-    }
+    try {
+      if (job.name === "video.create") {
+        await createWanTask(job.data);
+        return;
+      }
 
-    if (job.name === "video.poll") {
-      await pollWanTask(job.data);
-      return;
-    }
+      if (job.name === "video.poll") {
+        await pollWanTask(job.data);
+        return;
+      }
 
-    if (job.name === "video.stitch") {
-      await stitchFinalVideo(job.data);
-      return;
-    }
+      if (job.name === "video.stitch") {
+        await stitchFinalVideo(job.data);
+        return;
+      }
 
-    throw new Error(`Unknown video job: ${job.name}`);
+      throw new Error(`Unknown video job: ${job.name}`);
+    } catch (error) {
+      await markFailedIfRetryExhausted(job, error);
+      throw error;
+    }
   },
   {
     connection,
@@ -66,6 +71,46 @@ worker.on("failed", (job, error) => {
 console.log(
   `Video worker started. Queue: ${VIDEO_QUEUE_NAME}. Concurrency: ${CONCURRENCY}.`,
 );
+
+async function markFailedIfRetryExhausted(job, error) {
+  if (willRetry(job)) {
+    return;
+  }
+
+  const message = getWorkerFailureMessage(error);
+
+  if (job.name === "video.create" || job.name === "video.poll") {
+    await updateVideoJobFailure(job.data.projectId, job.data.scene, message);
+    return;
+  }
+
+  if (job.name === "video.stitch") {
+    await updateFinalVideo(job.data.projectId, {
+      status: "FAILED",
+      errorMessage: message,
+    });
+  }
+}
+
+function willRetry(job) {
+  const maxAttempts = job.opts.attempts ?? 1;
+
+  return job.attemptsMade + 1 < maxAttempts;
+}
+
+async function updateVideoJobFailure(projectId, scene, errorMessage) {
+  await pool.query(
+    `
+    UPDATE video_jobs
+    SET status = $1,
+        error_message = $2,
+        next_poll_at = NULL,
+        updated_at = $3
+    WHERE project_id = $4 AND scene = $5
+  `,
+    ["FAILED", errorMessage, new Date().toISOString(), projectId, scene],
+  );
+}
 
 async function createWanTask({ projectId, scene, prompt, voiceOver, productImageUrl }) {
   const task = await createWanTextToVideoTask(prompt);
@@ -104,6 +149,7 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUr
   const nextPollAt = getNextPollAt(task.status);
 
   let videoUrl = task.videoUrl ?? null;
+  let processingWarning = null;
 
   if (task.status === "SUCCEEDED" && videoUrl) {
     try {
@@ -115,6 +161,9 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUr
         scene,
       );
     } catch (error) {
+      processingWarning =
+        "Scene video succeeded, but voice-over or product overlay failed: " +
+        getWorkerFailureMessage(error);
       console.error(
         `Voice-over synthesis/mux failed for project ${projectId} scene ${scene}, keeping silent clip:`,
         error,
@@ -137,7 +186,7 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUr
     [
       task.status,
       videoUrl,
-      task.errorMessage ?? null,
+      processingWarning ?? task.errorMessage ?? null,
       now,
       nextPollAt,
       now,
@@ -359,11 +408,6 @@ async function stitchFinalVideo({ projectId }) {
       videoUrl: `/uploads/${outputFilename}`,
     });
   } catch (error) {
-    await updateFinalVideo(projectId, {
-      status: "FAILED",
-      errorMessage: error instanceof Error ? error.message : "Unknown stitching error.",
-    });
-
     throw error;
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -563,6 +607,40 @@ async function readJsonResponse(response) {
       )}`,
     );
   }
+}
+
+function getWorkerFailureMessage(error) {
+  const message = getErrorMessage(error);
+
+  if (message.includes("Wan video environment variables")) {
+    return "Wan video is not configured. Set DASHSCOPE_API_KEY and DASHSCOPE_VIDEO_BASE_URL, then retry this scene.";
+  }
+
+  if (message.includes("TTS environment variables")) {
+    return "Voice-over failed because TTS is not configured. Set DASHSCOPE_API_KEY and DASHSCOPE_TTS_BASE_URL or DASHSCOPE_VIDEO_BASE_URL.";
+  }
+
+  if (message.includes("ffmpeg") || error?.code === "ENOENT") {
+    return "Video processing failed because ffmpeg is not available on the worker server. Install ffmpeg and retry.";
+  }
+
+  if (message.includes("Failed to download clip")) {
+    return "Video processing failed while downloading a generated clip. Check that provider URLs or local uploads are reachable from the worker.";
+  }
+
+  if (message.includes("non-JSON response") || message.includes("empty response")) {
+    return `Provider returned an invalid response. ${message}`;
+  }
+
+  return message;
+}
+
+function getErrorMessage(error) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unknown worker error.";
 }
 
 function getRedisConnection(redisUrl) {

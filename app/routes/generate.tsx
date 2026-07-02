@@ -85,7 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const productImage = formData.get("productImage");
 
     try {
-        assertValidProductImage(productImage);
+        await assertValidProductImage(productImage);
     } catch (error) {
         return {
             error: getUploadErrorMessage(error),

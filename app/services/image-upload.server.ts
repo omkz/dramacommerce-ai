@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { fileTypeFromBuffer } from "file-type";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -9,43 +10,61 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
-  "image/gif",
 ]);
+const IMAGE_EXTENSIONS_BY_TYPE: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+};
 
 export async function saveUploadedImage(
   file: FormDataEntryValue | null,
 ): Promise<{ imageName: string; imageUrl?: string }> {
-  assertValidProductImage(file);
+  const validatedImage = await getValidatedProductImage(file);
 
   await mkdir(UPLOAD_DIR, { recursive: true });
 
-  const extension = getSafeExtension(file.name);
+  const extension = IMAGE_EXTENSIONS_BY_TYPE[validatedImage.mime] ?? ".jpg";
   const filename = `${randomUUID()}${extension}`;
   const filePath = path.join(UPLOAD_DIR, filename);
 
-  const arrayBuffer = await file.arrayBuffer();
-  await writeFile(filePath, Buffer.from(arrayBuffer));
+  await writeFile(filePath, validatedImage.buffer);
 
   return {
-    imageName: file.name,
+    imageName: validatedImage.file.name,
     imageUrl: `/uploads/${filename}`,
   };
 }
 
-export function assertValidProductImage(
+export async function assertValidProductImage(
   file: FormDataEntryValue | null,
-): asserts file is File {
+): Promise<void> {
+  await getValidatedProductImage(file);
+}
+
+async function getValidatedProductImage(
+  file: FormDataEntryValue | null,
+): Promise<{ file: File; buffer: Buffer; mime: string }> {
   if (!(file instanceof File) || !file.name) {
     throw new Error("Product image is required.");
-  }
-
-  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-    throw new Error("Only JPG, PNG, WebP, and GIF images are allowed.");
   }
 
   if (file.size > MAX_IMAGE_SIZE) {
     throw new Error("Image must be smaller than 5MB.");
   }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const detectedType = await fileTypeFromBuffer(buffer);
+
+  if (!detectedType || !ALLOWED_IMAGE_TYPES.has(detectedType.mime)) {
+    throw new Error("Only JPG, PNG, and WebP images are allowed.");
+  }
+
+  if (file.type && file.type !== detectedType.mime) {
+    throw new Error("The uploaded file content does not match its image type.");
+  }
+
+  return { file, buffer, mime: detectedType.mime };
 }
 
 export async function deleteUploadedFile(
@@ -62,14 +81,4 @@ export async function deleteUploadedFile(
   }
 
   await rm(path.join(UPLOAD_DIR, filename), { force: true });
-}
-
-function getSafeExtension(filename: string): string {
-  const extension = path.extname(filename).toLowerCase();
-
-  if ([".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(extension)) {
-    return extension;
-  }
-
-  return ".jpg";
 }

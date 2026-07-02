@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { saveProject } from "~/services/project-store.server";
 import { generateShowPlan } from "~/services/showrunner.server";
 import { saveUploadedImage } from "~/services/image-upload.server";
+import { checkGenerateRateLimit, getClientIp } from "~/services/rate-limit.server";
 import {
     QwenApiError,
     QwenConfigurationError,
@@ -49,6 +50,12 @@ export function meta() {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+    const rateLimitResult = await checkGenerateRateLimit(getClientIp(request));
+
+    if (!rateLimitResult.allowed) {
+        return { error: rateLimitResult.message };
+    }
+
     const formData = await request.formData();
 
     const productName = getFormString(formData, "productName");

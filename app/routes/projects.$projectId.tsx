@@ -673,8 +673,8 @@ export default function ProjectDetail() {
                               id={`prompt-${scene.scene}`}
                               name="prompt"
                               defaultValue={currentPrompt}
-                              rows={3}
-                              className="mt-2 w-full rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/80 outline-none focus:border-gold/50"
+                              rows={6}
+                              className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/80 outline-none focus:border-gold/50"
                             />
                             <button
                               type="submit"

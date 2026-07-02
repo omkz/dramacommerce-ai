@@ -2,12 +2,19 @@ import {
   index,
   integer,
   jsonb,
+  pgEnum,
   pgTable,
   primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
 import type { ShowPlan } from "~/types/showrunner";
+import { VIDEO_GENERATION_STATUSES } from "~/types/video-status";
+
+export const videoGenerationStatusEnum = pgEnum(
+  "video_generation_status",
+  VIDEO_GENERATION_STATUSES,
+);
 
 // Auth.js's DrizzleAdapter creates users without passing an id, so the
 // schema itself must generate one (unlike `projects.id`, which the app sets).
@@ -88,7 +95,7 @@ export const videoJobs = pgTable(
     provider: text("provider").notNull().default("wan"),
     queueJobId: text("queue_job_id"),
     taskId: text("task_id"),
-    status: text("status").notNull(),
+    status: videoGenerationStatusEnum("status").notNull(),
     prompt: text("prompt").notNull(),
     attempts: integer("attempts").notNull().default(0),
     videoUrl: text("video_url"),
@@ -109,7 +116,7 @@ export const finalVideos = pgTable("final_videos", {
   projectId: text("project_id")
     .primaryKey()
     .references(() => projects.id, { onDelete: "cascade" }),
-  status: text("status").notNull(),
+  status: videoGenerationStatusEnum("status").notNull(),
   videoUrl: text("video_url"),
   errorMessage: text("error_message"),
   queueJobId: text("queue_job_id"),

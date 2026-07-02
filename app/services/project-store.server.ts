@@ -1,8 +1,11 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { finalVideos, projects, videoJobs } from "~/db/schema";
 import { db } from "~/services/db.server";
-import type { VideoGenerationStatus } from "~/services/wan-video.server";
 import type { ShowPlan } from "~/types/showrunner";
+import {
+  parseVideoGenerationStatus,
+  type VideoGenerationStatus,
+} from "~/types/video-status";
 
 export type VideoGenerationJob = {
   scene: number;
@@ -246,7 +249,7 @@ function rowToVideoJob(row: typeof videoJobs.$inferSelect): VideoGenerationJob {
     taskId: row.taskId ?? undefined,
     queueJobId: row.queueJobId ?? undefined,
     provider: "wan",
-    status: row.status as VideoGenerationStatus,
+    status: parseVideoGenerationStatus(row.status),
     prompt: row.prompt,
     attempts: row.attempts,
     videoUrl: row.videoUrl ?? undefined,
@@ -260,7 +263,7 @@ function rowToVideoJob(row: typeof videoJobs.$inferSelect): VideoGenerationJob {
 
 function rowToFinalVideo(row: typeof finalVideos.$inferSelect): FinalVideo {
   return {
-    status: row.status as VideoGenerationStatus,
+    status: parseVideoGenerationStatus(row.status),
     videoUrl: row.videoUrl ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
     queueJobId: row.queueJobId ?? undefined,

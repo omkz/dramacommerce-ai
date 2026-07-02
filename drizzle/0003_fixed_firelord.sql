@@ -1,0 +1,3 @@
+CREATE TYPE "public"."video_generation_status" AS ENUM('QUEUED', 'PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'UNKNOWN');--> statement-breakpoint
+ALTER TABLE "final_videos" ALTER COLUMN "status" SET DATA TYPE "public"."video_generation_status" USING "status"::"public"."video_generation_status";--> statement-breakpoint
+ALTER TABLE "video_jobs" ALTER COLUMN "status" SET DATA TYPE "public"."video_generation_status" USING "status"::"public"."video_generation_status";

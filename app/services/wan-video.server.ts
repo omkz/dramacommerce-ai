@@ -1,3 +1,8 @@
+import {
+  parseVideoGenerationStatus,
+  type VideoGenerationStatus,
+} from "~/types/video-status";
+
 type WanCreateTaskResponse = {
   output?: {
     task_id?: string;
@@ -20,15 +25,6 @@ type WanQueryTaskResponse = {
   code?: string;
   message?: string;
 };
-
-export type VideoGenerationStatus =
-  | "QUEUED"
-  | "PENDING"
-  | "RUNNING"
-  | "SUCCEEDED"
-  | "FAILED"
-  | "CANCELED"
-  | "UNKNOWN";
 
 export async function createWanTextToVideoTask(prompt: string): Promise<{
   taskId: string;
@@ -77,7 +73,7 @@ export async function createWanTextToVideoTask(prompt: string): Promise<{
   }
 
   const taskId = data.output?.task_id;
-  const status = normalizeStatus(data.output?.task_status);
+  const status = parseVideoGenerationStatus(data.output?.task_status);
 
   if (!taskId) {
     throw new Error("Wan did not return a task_id.");
@@ -125,24 +121,10 @@ export async function queryWanVideoTask(taskId: string): Promise<{
 
   return {
     taskId: output.task_id,
-    status: normalizeStatus(output.task_status),
+    status: parseVideoGenerationStatus(output.task_status),
     videoUrl: output.video_url,
     errorMessage: output.message,
   };
-}
-
-function normalizeStatus(status: string | undefined): VideoGenerationStatus {
-  if (
-    status === "PENDING" ||
-    status === "RUNNING" ||
-    status === "SUCCEEDED" ||
-    status === "FAILED" ||
-    status === "CANCELED"
-  ) {
-    return status;
-  }
-
-  return "UNKNOWN";
 }
 
 async function readJsonResponse(response: Response): Promise<unknown> {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -6,6 +6,7 @@ import {
   useActionData,
   useLoaderData,
   useNavigation,
+  useRevalidator,
 } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
@@ -312,6 +313,15 @@ function isTerminalJobStatus(status: string): boolean {
   return status === "SUCCEEDED" || status === "FAILED" || status === "CANCELED";
 }
 
+function isInFlightJobStatus(status: string): boolean {
+  return (
+    status === "QUEUED" ||
+    status === "PENDING" ||
+    status === "RUNNING" ||
+    status === "UNKNOWN"
+  );
+}
+
 function slugify(value: string): string {
   const slug = value
     .toLowerCase()
@@ -335,6 +345,7 @@ export default function ProjectDetail() {
   const project = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
   const result = project.showPlan;
   const pendingIntent = navigation.formData?.get("intent");
   const pendingScene = navigation.formData?.get("scene");
@@ -355,6 +366,27 @@ export default function ProjectDetail() {
         new Date(project.finalVideo!.updatedAt).getTime(),
     );
   const isDeletingProject = pendingIntent === "delete-project";
+  const hasInFlightSceneVideos = project.videoJobs?.some((job) =>
+    isInFlightJobStatus(job.status),
+  );
+  const hasInFlightFinalVideo = project.finalVideo
+    ? isInFlightJobStatus(project.finalVideo.status)
+    : false;
+  const shouldAutoRefresh = hasInFlightSceneVideos || hasInFlightFinalVideo;
+
+  useEffect(() => {
+    if (!shouldAutoRefresh) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (revalidator.state === "idle") {
+        revalidator.revalidate();
+      }
+    }, 8_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [revalidator, shouldAutoRefresh]);
 
   return (
     <main className="min-h-screen bg-ink px-6 py-10 text-bone">
@@ -368,6 +400,13 @@ export default function ProjectDetail() {
             <p className="font-mono text-xs text-ash">
               Shot on {new Date(project.createdAt).toLocaleString()}
             </p>
+
+            {shouldAutoRefresh ? (
+              <p className="inline-flex items-center gap-2 rounded-full border border-paper/15 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-ash">
+                <span className="tally-dot h-1.5 w-1.5 rounded-full bg-flame" aria-hidden />
+                {revalidator.state === "loading" ? "Updating status" : "Auto status on"}
+              </p>
+            ) : null}
 
             <Form
               method="post"
@@ -559,6 +598,12 @@ export default function ProjectDetail() {
                     Last updated: {new Date(project.finalVideo.updatedAt).toLocaleString()}
                   </p>
 
+                  {isInFlightJobStatus(project.finalVideo.status) ? (
+                    <p className="mt-2 text-sm text-ash">
+                      This page checks final video progress automatically.
+                    </p>
+                  ) : null}
+
                   {project.finalVideo.errorMessage ? (
                     <p className="mt-2 text-sm text-flame">
                       {project.finalVideo.errorMessage}
@@ -686,6 +731,12 @@ export default function ProjectDetail() {
 
                             <p className="mt-1">Poll attempts: {videoJob.attempts}</p>
 
+                            {isInFlightJobStatus(videoJob.status) ? (
+                              <p className="mt-1">
+                                Status checks run automatically while this scene is in progress.
+                              </p>
+                            ) : null}
+
                             {videoJob.errorMessage ? (
                               <p className="mt-1 text-flame">{videoJob.errorMessage}</p>
                             ) : null}
@@ -735,7 +786,7 @@ export default function ProjectDetail() {
                                 disabled={isRefreshingVideo}
                                 className="rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
                               >
-                                {isRefreshingVideo ? "Refreshing status..." : "Refresh Status"}
+                                {isRefreshingVideo ? "Checking Wan status..." : "Check Wan Status"}
                               </button>
                             </Form>
                           </>

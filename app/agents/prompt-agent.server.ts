@@ -70,6 +70,7 @@ Rules:
 `,
     tools: [GET_WAN_VIDEO_CONSTRAINTS_TOOL],
     toolHandlers: promptAgentToolHandlers,
+    requiredToolNames: ["get_wan_video_constraints"],
   });
 
   return validateStoryboard(rawResult);

@@ -65,11 +65,13 @@ export async function callQwenJson({
   user,
   tools,
   toolHandlers,
+  requiredToolNames = [],
 }: {
   system: string;
   user: string;
   tools?: QwenTool[];
   toolHandlers?: QwenToolHandlers;
+  requiredToolNames?: string[];
 }): Promise<unknown> {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.QWEN_BASE_URL;
@@ -83,8 +85,13 @@ export async function callQwenJson({
     { role: "system", content: system },
     { role: "user", content: user },
   ];
+  const calledToolNames = new Set<string>();
 
   for (let round = 0; round < MAX_TOOL_CALL_ROUNDS; round++) {
+    const requiredToolName = requiredToolNames.find(
+      (toolName) => !calledToolNames.has(toolName),
+    );
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -100,7 +107,19 @@ export async function callQwenJson({
         // is combined with tools. Only force JSON mode on tool-free calls;
         // agents using tools rely on the "Return only valid JSON" system
         // prompt instruction instead, same as before response_format existed.
-        ...(tools ? { tools } : { response_format: { type: "json_object" } }),
+        ...(tools
+          ? {
+              tools,
+              ...(requiredToolName
+                ? {
+                    tool_choice: {
+                      type: "function",
+                      function: { name: requiredToolName },
+                    },
+                  }
+                : {}),
+            }
+          : { response_format: { type: "json_object" } }),
       }),
     });
 
@@ -134,6 +153,7 @@ export async function callQwenJson({
           ? await handler(args)
           : { error: `Unknown tool: ${toolCall.function.name}` };
 
+        calledToolNames.add(toolCall.function.name);
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
@@ -146,6 +166,16 @@ export async function callQwenJson({
 
     if (!message.content) {
       throw new QwenResponseError("Qwen returned an empty response.");
+    }
+
+    const missingRequiredTool = requiredToolNames.find(
+      (toolName) => !calledToolNames.has(toolName),
+    );
+
+    if (missingRequiredTool) {
+      throw new QwenResponseError(
+        `Qwen returned JSON before calling required tool: ${missingRequiredTool}.`,
+      );
     }
 
     try {

@@ -14,6 +14,7 @@ export type VideoGenerationJob = {
   provider: "wan";
   status: VideoGenerationStatus;
   prompt: string;
+  voiceOver?: string;
   attempts: number;
   videoUrl?: string;
   errorMessage?: string;
@@ -145,6 +146,7 @@ export async function saveVideoJob(
       taskId: job.taskId,
       status: job.status,
       prompt: job.prompt,
+      voiceOver: job.voiceOver,
       attempts: job.attempts,
       videoUrl: job.videoUrl,
       errorMessage: job.errorMessage,
@@ -161,6 +163,7 @@ export async function saveVideoJob(
         taskId: job.taskId,
         status: job.status,
         prompt: job.prompt,
+        voiceOver: job.voiceOver,
         attempts: job.attempts,
         videoUrl: job.videoUrl,
         errorMessage: job.errorMessage,
@@ -251,6 +254,7 @@ function rowToVideoJob(row: typeof videoJobs.$inferSelect): VideoGenerationJob {
     provider: "wan",
     status: parseVideoGenerationStatus(row.status),
     prompt: row.prompt,
+    voiceOver: row.voiceOver ?? undefined,
     attempts: row.attempts,
     videoUrl: row.videoUrl ?? undefined,
     errorMessage: row.errorMessage ?? undefined,

@@ -208,6 +208,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     const promptOverride = String(formData.get("prompt") || "").trim();
+    const voiceOverOverride = String(formData.get("voiceOver") || "").trim();
 
     try {
       await createVideoJobForScene(
@@ -216,6 +217,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         project.showPlan.brief.imageUrl,
         scene,
         promptOverride || undefined,
+        voiceOverOverride || undefined,
       );
 
       return redirect(`/projects/${projectId}`);
@@ -276,14 +278,16 @@ async function createVideoJobForScene(
   productImageUrl: string | undefined,
   scene: StoryboardScene,
   promptOverride?: string,
+  voiceOverOverride?: string,
 ): Promise<SavedProject> {
   const prompt = promptOverride || scene.videoPrompt;
+  const voiceOver = voiceOverOverride || scene.voiceOver;
 
   const queueJobId = await enqueueVideoCreateJob({
     projectId,
     scene: scene.scene,
     prompt,
-    voiceOver: scene.voiceOver,
+    voiceOver,
     productImageUrl,
   });
 
@@ -295,6 +299,7 @@ async function createVideoJobForScene(
     queueJobId,
     status: "QUEUED",
     prompt,
+    voiceOver,
     attempts: 0,
     nextPollAt: new Date(Date.now() + 30_000).toISOString(),
     createdAt: now,
@@ -678,6 +683,7 @@ export default function ProjectDetail() {
                     isPendingForThisScene && pendingIntent === "refresh-video-task";
                   const canRegenerate = !videoJob || isTerminalJobStatus(videoJob.status);
                   const currentPrompt = videoJob?.prompt ?? scene.videoPrompt;
+                  const currentVoiceOver = videoJob?.voiceOver ?? scene.voiceOver;
 
                   return (
                     <div
@@ -703,11 +709,6 @@ export default function ProjectDetail() {
 
                         <p className="mt-3 text-sm leading-6 text-ash">
                           {scene.visual}
-                        </p>
-
-                        <p className="mt-3 rounded-sm border border-paper/10 bg-panel p-3 text-sm text-bone/80">
-                          <span className="font-semibold text-bone">Voice-over:</span>{" "}
-                          {scene.voiceOver}
                         </p>
 
                         {videoJob?.videoUrl ? (
@@ -753,8 +754,22 @@ export default function ProjectDetail() {
                             <input type="hidden" name="intent" value="create-video-task" />
                             <input type="hidden" name="scene" value={scene.scene} />
                             <label
-                              htmlFor={`prompt-${scene.scene}`}
+                              htmlFor={`voiceOver-${scene.scene}`}
                               className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                            >
+                              Voice-over
+                            </label>
+                            <textarea
+                              id={`voiceOver-${scene.scene}`}
+                              name="voiceOver"
+                              defaultValue={currentVoiceOver}
+                              rows={3}
+                              className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                            />
+
+                            <label
+                              htmlFor={`prompt-${scene.scene}`}
+                              className="mt-4 block font-mono text-[11px] uppercase tracking-widest text-ash"
                             >
                               Video Prompt
                             </label>
@@ -779,6 +794,11 @@ export default function ProjectDetail() {
                           </Form>
                         ) : (
                           <>
+                            <p className="mt-3 rounded-sm border border-paper/10 bg-panel p-3 text-sm text-bone/80">
+                              <span className="font-semibold text-bone">Voice-over:</span>{" "}
+                              {currentVoiceOver}
+                            </p>
+
                             <p className="mt-3 rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/70">
                               {currentPrompt}
                             </p>

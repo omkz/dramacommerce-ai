@@ -1,0 +1,1 @@
+ALTER TABLE "video_jobs" ADD COLUMN "voice_over" text;

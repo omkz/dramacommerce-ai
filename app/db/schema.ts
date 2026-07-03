@@ -97,6 +97,7 @@ export const videoJobs = pgTable(
     taskId: text("task_id"),
     status: videoGenerationStatusEnum("status").notNull(),
     prompt: text("prompt").notNull(),
+    voiceOver: text("voice_over"),
     attempts: integer("attempts").notNull().default(0),
     videoUrl: text("video_url"),
     errorMessage: text("error_message"),

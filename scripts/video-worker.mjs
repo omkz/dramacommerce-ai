@@ -218,9 +218,6 @@ async function narrateAndMuxScene(videoUrl, voiceOver, productImageUrl, projectI
 
     const videoPath = path.join(tempDir, "video.mp4");
     const audioPath = path.join(tempDir, "audio.mp3");
-    const productImagePath = productImageUrl
-      ? path.join(tempDir, "product-image" + path.extname(productImageUrl))
-      : null;
 
     // Downloading the Wan clip and synthesizing the voice-over are
     // independent — run them concurrently instead of waiting on TTS
@@ -232,23 +229,38 @@ async function narrateAndMuxScene(videoUrl, voiceOver, productImageUrl, projectI
 
     await downloadFile(audioUrl, audioPath);
 
-    if (productImageUrl && productImagePath) {
-      await downloadFile(productImageUrl, productImagePath);
-    }
-
     const outputFilename = `${randomUUID()}.mp4`;
     const muxedOutputPath = path.join(tempDir, `muxed-${outputFilename}`);
-    const tempOutputPath = path.join(tempDir, outputFilename);
     await muxVideoWithAudio(videoPath, audioPath, muxedOutputPath);
 
-    if (productImagePath) {
-      await overlayProductImage(muxedOutputPath, productImagePath, tempOutputPath);
-    } else {
-      await copyFile(muxedOutputPath, tempOutputPath);
+    // The product image overlay is a nice-to-have on top of an already
+    // successful narrated clip — if it fails (missing/unreachable image,
+    // bad ffmpeg filter input, etc.), fall back to the narrated clip
+    // without the overlay instead of losing the TTS work that already
+    // succeeded, same graceful-degradation philosophy as the voice-over
+    // fallback one level up in pollWanTask.
+    let finalPath = muxedOutputPath;
+
+    if (productImageUrl) {
+      try {
+        const productImagePath = path.join(
+          tempDir,
+          "product-image" + path.extname(productImageUrl),
+        );
+        const overlaidPath = path.join(tempDir, outputFilename);
+        await downloadFile(productImageUrl, productImagePath);
+        await overlayProductImage(muxedOutputPath, productImagePath, overlaidPath);
+        finalPath = overlaidPath;
+      } catch (error) {
+        console.error(
+          `Product image overlay failed for project ${projectId} scene ${scene}, keeping narrated clip without overlay:`,
+          error,
+        );
+      }
     }
 
     await mkdir(UPLOAD_DIR, { recursive: true });
-    await copyFile(tempOutputPath, path.join(UPLOAD_DIR, outputFilename));
+    await copyFile(finalPath, path.join(UPLOAD_DIR, outputFilename));
 
     return `/uploads/${outputFilename}`;
   } finally {

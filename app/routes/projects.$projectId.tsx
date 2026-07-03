@@ -208,6 +208,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (voiceOverOverride.length > maxVoiceOverChars) {
       return {
         error: `Voice-over is too long for a ${process.env.WAN_VIDEO_DURATION || "5"}s scene (max ~${maxVoiceOverChars} characters) — it will get cut off mid-sentence. Shorten it and try again.`,
+        scene: sceneNumber,
       };
     }
 
@@ -230,6 +231,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return {
         error:
           "Unable to queue the video job. Check Redis/BullMQ configuration and try again.",
+        scene: sceneNumber,
       };
     }
   }
@@ -268,6 +270,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return {
         error:
           "Unable to refresh the Wan video task. Check provider configuration or try again later.",
+        scene: sceneNumber,
       };
     }
   }
@@ -515,7 +518,10 @@ export default function ProjectDetail() {
         </section>
 
         {actionData?.error ? (
-          <p className="mt-8 rounded-lg border border-flame/30 bg-flame/10 p-4 text-sm leading-6 text-flame">
+          <p
+            role="alert"
+            className="mt-8 rounded-lg border border-flame/30 bg-flame/10 p-4 text-sm leading-6 text-flame"
+          >
             {actionData.error}
           </p>
         ) : null}
@@ -610,6 +616,15 @@ export default function ProjectDetail() {
 
             <ResultCard title="Storyboard" eyebrow="Reel">
               <div className="space-y-6">
+              {actionData?.error ? (
+                <p
+                  role="alert"
+                  className="rounded-lg border border-flame/30 bg-flame/10 p-4 text-sm leading-6 text-flame"
+                >
+                  {actionData.error}
+                </p>
+              ) : null}
+
               <Form method="post">
                 <input type="hidden" name="intent" value="create-all-video-tasks" />
                 <button
@@ -635,6 +650,8 @@ export default function ProjectDetail() {
                   const canRegenerate = !videoJob || isTerminalJobStatus(videoJob.status);
                   const currentPrompt = videoJob?.prompt ?? scene.videoPrompt;
                   const currentVoiceOver = videoJob?.voiceOver ?? scene.voiceOver;
+                  const sceneActionError =
+                    actionData?.scene === scene.scene ? actionData.error : undefined;
 
                   return (
                     <div
@@ -720,6 +737,15 @@ export default function ProjectDetail() {
                           </div>
 
                           <div className="min-w-0">
+                            {sceneActionError ? (
+                              <p
+                                role="alert"
+                                className="mb-4 rounded-lg border border-flame/30 bg-flame/10 p-4 text-sm leading-6 text-flame"
+                              >
+                                {sceneActionError}
+                              </p>
+                            ) : null}
+
                             <h3 className="font-display text-xl font-medium text-bone">
                               {scene.title}
                             </h3>

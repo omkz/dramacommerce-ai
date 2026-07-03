@@ -10,6 +10,7 @@ import {
 } from "~/services/image-upload.server";
 import { checkGenerateRateLimit } from "~/services/rate-limit.server";
 import { requireUser } from "~/services/auth.server";
+import type { ProductBrief } from "~/types/showrunner";
 
 const MOOD_OPTIONS = new Set([
     "Cinematic",
@@ -31,6 +32,9 @@ const DURATION_OPTIONS = new Set([
     "45 seconds",
     "60 seconds",
 ]);
+
+const PRODUCT_REFERENCE_MODE_OPTIONS = new Set(["auto", "force", "disable"]);
+type ProductReferenceMode = NonNullable<ProductBrief["productReferenceMode"]>;
 
 const crew = [
     { role: "Analyze Agent", job: "Reads the product photo for category, colors, and quality" },
@@ -63,6 +67,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const mood = getFormString(formData, "mood");
     const platform = getFormString(formData, "platform");
     const duration = getFormString(formData, "duration");
+    const showProductOverlay = formData.has("showProductOverlay");
+    const productReferenceMode = parseProductReferenceMode(
+        getFormString(formData, "productReferenceMode"),
+    );
 
     const validationError = validateBriefFields({
         productName,
@@ -73,6 +81,7 @@ export async function action({ request }: ActionFunctionArgs) {
         mood,
         platform,
         duration,
+        productReferenceMode,
     });
 
     if (validationError) {
@@ -108,6 +117,8 @@ export async function action({ request }: ActionFunctionArgs) {
         duration,
         imageName: uploadedImage.imageName,
         imageUrl: uploadedImage.imageUrl,
+        showProductOverlay,
+        productReferenceMode,
     };
 
     const showrunnerJobId = crypto.randomUUID();
@@ -144,6 +155,7 @@ function validateBriefFields({
     mood,
     platform,
     duration,
+    productReferenceMode,
 }: {
     productName: string;
     productDescription: string;
@@ -153,6 +165,7 @@ function validateBriefFields({
     mood: string;
     platform: string;
     duration: string;
+    productReferenceMode: string;
 }): string | null {
     if (!productName) {
         return "Product name is required.";
@@ -186,7 +199,15 @@ function validateBriefFields({
         return "Choose a valid duration.";
     }
 
+    if (!PRODUCT_REFERENCE_MODE_OPTIONS.has(productReferenceMode)) {
+        return "Choose a valid product reference mode.";
+    }
+
     return null;
+}
+
+function parseProductReferenceMode(value: string): ProductReferenceMode {
+    return PRODUCT_REFERENCE_MODE_OPTIONS.has(value) ? value as ProductReferenceMode : "auto";
 }
 
 function getUploadErrorMessage(error: unknown): string {
@@ -415,6 +436,51 @@ export default function Generate() {
                                                 <option>60 seconds</option>
                                             </select>
                                         </div>
+                                    </div>
+
+                                    <label className="flex items-start gap-3 text-sm text-ink/70">
+                                        <input
+                                            type="checkbox"
+                                            name="showProductOverlay"
+                                            defaultChecked
+                                            className="mt-1 h-4 w-4 shrink-0 accent-flame"
+                                        />
+                                        <span>
+                                            Show the product photo as a small overlay on scenes
+                                            that don't already use it as a reference frame.
+                                            Turn off if you'd rather let generated scenes stand
+                                            on their own.
+                                        </span>
+                                    </label>
+
+                                    <div>
+                                        <label
+                                            htmlFor="productReferenceMode"
+                                            className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                        >
+                                            Product reference mode
+                                        </label>
+                                        <select
+                                            id="productReferenceMode"
+                                            name="productReferenceMode"
+                                            defaultValue="auto"
+                                            className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
+                                        >
+                                            <option value="auto">
+                                                Auto — use AI recommendation
+                                            </option>
+                                            <option value="force">
+                                                Use as packshot — force hero reference
+                                            </option>
+                                            <option value="disable">
+                                                Disable — text-to-video only
+                                            </option>
+                                        </select>
+                                        <p className="mt-2 text-xs leading-5 text-ink/50">
+                                            Auto lets the Analyze Agent decide. Use as packshot is
+                                            for clean centered product photos. Disable avoids
+                                            image-to-video reference frames.
+                                        </p>
                                     </div>
                                 </div>
                             </div>

@@ -123,6 +123,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           user.id,
           project.showPlan.brief.imageUrl,
           scene,
+          project.showPlan.brief.showProductOverlay !== false,
         );
       } catch (error) {
         console.error(`Failed to enqueue video job for scene ${scene.scene}:`, error);
@@ -215,6 +216,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         user.id,
         project.showPlan.brief.imageUrl,
         scene,
+        project.showPlan.brief.showProductOverlay !== false,
         promptOverride || undefined,
         voiceOverOverride || undefined,
       );
@@ -276,6 +278,7 @@ async function createVideoJobForScene(
   userId: string,
   productImageUrl: string | undefined,
   scene: StoryboardScene,
+  showOverlay: boolean,
   promptOverride?: string,
   voiceOverOverride?: string,
 ): Promise<SavedProject> {
@@ -289,6 +292,7 @@ async function createVideoJobForScene(
     voiceOver,
     productImageUrl,
     useProductReference: scene.useProductReference,
+    showOverlay,
   });
 
   const now = new Date().toISOString();
@@ -586,6 +590,12 @@ export default function ProjectDetail() {
               <SmallItem label="Mood" value={result.brief.mood} />
               <SmallItem label="Platform" value={result.brief.platform} />
               <SmallItem label="Duration" value={result.brief.duration} />
+              <SmallItem
+                label="Reference Mode"
+                value={getProductReferenceModeLabel(
+                  result.brief.productReferenceMode,
+                )}
+              />
             </div>
 
             {result.brief.productDescription ||
@@ -967,6 +977,12 @@ function SmallItem({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-sm font-medium text-bone">{value}</p>
     </div>
   );
+}
+
+function getProductReferenceModeLabel(mode: string | undefined): string {
+  if (mode === "force") return "Use as packshot";
+  if (mode === "disable") return "Disabled";
+  return "Auto";
 }
 
 function StatusTag({ status }: { status: string }) {

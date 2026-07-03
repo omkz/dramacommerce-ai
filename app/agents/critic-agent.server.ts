@@ -11,7 +11,7 @@ export async function runCriticAgent(
   analysis?: ProductAnalysis,
 ): Promise<{ approved: boolean; notes?: string }> {
   const promptSafety = evaluatePromptSafetySkill(storyboard, analysis);
-  const videoReadiness = evaluateVideoReadinessSkill(storyboard, analysis);
+  const videoReadiness = evaluateVideoReadinessSkill(storyboard, analysis, brief);
 
   const rawResult = await callQwenJson({
     system: `You are the Critic Agent for DramaCommerce AI. Review the storyboard for quality before it goes to render. Return only valid JSON.`,

@@ -79,6 +79,7 @@ Rules:
 - Include camera movement, subject, setting, lighting, mood, and product visibility.
 - Make product appearance and benefits clear in the shot language, but avoid inventing unsupported logos, packaging, colors, or materials.
 - Avoid impossible product/logo details not present in the brief.
+- Respect productReferenceMode from the brief: disable means no image-to-video reference scenes, force means the final hero/reference scene should be written like a clean packshot animation.
 - When useProductReference is true for a scene, that scene's videoPrompt must describe motion that plausibly starts from a static product photo (e.g. the product rotating, camera pulling back/in) — not a different subject or setting, since the actual photo will be used as the literal first frame.
 `,
     tools: [GET_WAN_VIDEO_CONSTRAINTS_TOOL],

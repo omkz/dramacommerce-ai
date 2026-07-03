@@ -27,6 +27,8 @@ const showPlan = {
     platform: "TikTok",
     duration: "30 seconds",
     imageName: "demo-product-reference.jpg",
+    productReferenceMode: "auto",
+    showProductOverlay: true,
   },
   analysis: {
     category: "Running shoes",

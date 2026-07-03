@@ -9,6 +9,12 @@ export type ProductBrief = {
   duration: string;
   imageName: string;
   imageUrl?: string;
+  // Optional so old stored projects without this field still parse —
+  // treat undefined as true (overlay was always on before this existed).
+  showProductOverlay?: boolean;
+  // auto: use Analyze Agent recommendation; force: merchant intentionally
+  // treats the upload as a clean packshot; disable: text-to-video only.
+  productReferenceMode?: "auto" | "force" | "disable";
 };
 
 export type ProductAnalysis = {

@@ -55,6 +55,7 @@ Rules:
 - Include concrete shots, motion, product placement, and emotional beats.
 - Show the product's key selling points visually where possible, using only details supported by the brief and the photo analysis above.
 - Follow the custom skill guidance when deciding which scenes can safely use the product image as a reference.
+- Product reference mode controls merchant intent: "auto" means follow analysis.canUseAsReference, "force" means the merchant intentionally wants the uploaded image treated as a clean packshot for one hero/reference scene, and "disable" means keep all scenes text-to-video only.
 - Keep each voice-over line aligned with the story package.
 - useProductReference decides whether Wan will use the actual uploaded product photo as this scene's literal first frame (image-to-video), instead of generating purely from text. Only set it to true when ALL of these hold:
   1. analysis.canUseAsReference is true (a bad/cluttered photo should never be forced into the video).

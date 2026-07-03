@@ -26,6 +26,7 @@ export async function generateShowPlan(
     const directedScenes = normalizeReferenceSceneUsage(
         await runDirectorAgent(brief, story, analysis),
         analysis,
+        brief,
     );
 
     await onStageChange?.("PROMPTING");
@@ -33,7 +34,7 @@ export async function generateShowPlan(
 
     await onStageChange?.("CRITIQUING");
     const critique = await runCriticAgent(brief, storyboard, analysis);
-    const skillRevisionNotes = getSkillRevisionNotes(storyboard, analysis);
+    const skillRevisionNotes = getSkillRevisionNotes(storyboard, analysis, brief);
 
     if (!critique.approved || skillRevisionNotes) {
         storyboard = await runPromptAgent(
@@ -63,10 +64,11 @@ export async function generateShowPlan(
 function getSkillRevisionNotes(
     storyboard: Awaited<ReturnType<typeof runPromptAgent>>,
     analysis: Awaited<ReturnType<typeof runAnalyzeAgent>>,
+    brief: ProductBrief,
 ): string | undefined {
     const checks = [
         evaluatePromptSafetySkill(storyboard, analysis),
-        evaluateVideoReadinessSkill(storyboard, analysis),
+        evaluateVideoReadinessSkill(storyboard, analysis, brief),
     ];
     const warnings = checks.flatMap((check) => check.warnings);
 

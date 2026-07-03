@@ -64,6 +64,12 @@ The Analyze Agent returns `canUseAsReference`. The Director Agent uses that valu
 
 That makes image-to-video readiness visible even before render. When `useProductReference` is true, the video worker passes the uploaded product image into the Wan image-to-video path; otherwise it uses text-to-video.
 
+Merchants can choose the product reference mode on the brief form:
+
+- Auto uses the Analyze Agent recommendation.
+- Use as packshot forces one hero/reference scene for merchants who intentionally upload a clean centered product photo.
+- Disabled keeps every scene text-to-video.
+
 ## Persistence
 
 Postgres stores:

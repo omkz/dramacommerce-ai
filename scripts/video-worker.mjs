@@ -119,6 +119,7 @@ async function createWanTask({
   voiceOver,
   productImageUrl,
   useProductReference,
+  showOverlay,
 }) {
   const imgDataUrl =
     useProductReference && productImageUrl
@@ -143,7 +144,15 @@ async function createWanTask({
 
   await queue.add(
     "video.poll",
-    { projectId, scene, taskId: task.taskId, voiceOver, productImageUrl, useProductReference },
+    {
+      projectId,
+      scene,
+      taskId: task.taskId,
+      voiceOver,
+      productImageUrl,
+      useProductReference,
+      showOverlay,
+    },
     {
       delay: POLL_DELAY_MS,
       attempts: 10,
@@ -161,6 +170,7 @@ async function pollWanTask({
   voiceOver,
   productImageUrl,
   useProductReference,
+  showOverlay,
 }) {
   const task = await queryWanVideoTask(taskId);
   const now = new Date().toISOString();
@@ -178,6 +188,7 @@ async function pollWanTask({
         projectId,
         scene,
         useProductReference,
+        showOverlay,
       );
     } catch (error) {
       processingWarning =
@@ -217,7 +228,7 @@ async function pollWanTask({
   if (nextPollAt) {
     await queue.add(
       "video.poll",
-      { projectId, scene, taskId, voiceOver, productImageUrl, useProductReference },
+      { projectId, scene, taskId, voiceOver, productImageUrl, useProductReference, showOverlay },
       {
         delay: POLL_DELAY_MS,
         attempts: 10,
@@ -236,6 +247,7 @@ async function narrateAndMuxScene(
   projectId,
   scene,
   useProductReference,
+  showOverlay,
 ) {
   const tempDir = path.join(os.tmpdir(), `dramacommerce-narrate-${projectId}-${scene}`);
 
@@ -264,12 +276,13 @@ async function narrateAndMuxScene(
     // bad ffmpeg filter input, etc.), fall back to the narrated clip
     // without the overlay instead of losing the TTS work that already
     // succeeded, same graceful-degradation philosophy as the voice-over
-    // fallback one level up in pollWanTask. Skipped entirely when this
-    // scene already used the real photo as Wan's i2v first frame —
-    // stamping the same photo on top again would be redundant.
+    // fallback one level up in pollWanTask. Skipped when this scene
+    // already used the real photo as Wan's i2v first frame (stamping the
+    // same photo on top again would be redundant), or when the merchant
+    // opted out of the overlay entirely (showOverlay === false).
     let finalPath = muxedOutputPath;
 
-    if (productImageUrl && !useProductReference) {
+    if (productImageUrl && !useProductReference && showOverlay !== false) {
       try {
         const productImagePath = path.join(
           tempDir,

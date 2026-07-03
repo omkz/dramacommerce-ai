@@ -12,6 +12,7 @@ The multimodal orchestration path is: image → product analysis → script → 
 - Custom internal skill layer augments the Qwen agents with commerce angle selection, brand voice guidance, prompt safety checks, and video-readiness validation
 - Critic Agent reviews the storyboard before render and can trigger one bounded revision pass
 - Director Agent decides, per scene, whether Wan should animate directly from the real product photo (image-to-video) instead of text alone — only for scenes where that's visually coherent
+- Merchant-selectable product reference mode: Auto, force clean packshot/hero reference, or disable image-to-video reference frames
 - Structured 5-scene storyboard and editing timeline
 - Postgres project and video job persistence
 - Redis/BullMQ background queue for showrunner generation and Wan video jobs
@@ -94,7 +95,7 @@ DASHSCOPE_TTS_VOICE=Cherry
 
 `QWEN_BASE_URL` includes `/compatible-mode/v1` because it is used for OpenAI-compatible chat completions. `QWEN_VISION_MODEL` reuses the same base URL/key for the Analyze Agent's image understanding call.
 
-`WAN_VIDEO_I2V_MODEL` is used instead of `WAN_VIDEO_MODEL`, on the same Wan endpoint, for scenes the Director Agent marks as reference-eligible — Wan then animates directly from the real uploaded product photo instead of text alone.
+`WAN_VIDEO_I2V_MODEL` is used instead of `WAN_VIDEO_MODEL`, on the same Wan endpoint, for scenes the Director Agent marks as reference-eligible — Wan then animates directly from the real uploaded product photo instead of text alone. Product reference mode defaults to Auto, can be forced when the merchant intentionally uploads a clean packshot, or disabled for text-to-video-only rendering.
 
 `DASHSCOPE_VIDEO_BASE_URL` does not include `/compatible-mode/v1` because the Wan video API uses `/api/v1/services/...` and `/api/v1/tasks/...`. `DASHSCOPE_TTS_BASE_URL` uses the same style and is usually the same value as `DASHSCOPE_VIDEO_BASE_URL` (same DashScope workspace), kept as a separate var per DashScope surface.
 

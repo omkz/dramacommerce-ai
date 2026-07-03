@@ -7,6 +7,7 @@ export type VideoCreateJobData = {
   voiceOver: string;
   productImageUrl?: string;
   useProductReference?: boolean;
+  showOverlay?: boolean;
 };
 
 export type VideoPollJobData = {

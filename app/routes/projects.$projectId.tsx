@@ -430,6 +430,7 @@ export default function ProjectDetail() {
     ? isInFlightJobStatus(project.finalVideo.status)
     : false;
   const shouldAutoRefresh = hasInFlightSceneVideos || hasInFlightFinalVideo;
+  const videoFrameClassName = getVideoFrameClassName(result.brief.aspectRatio);
 
   useEffect(() => {
     if (!shouldAutoRefresh) {
@@ -536,11 +537,15 @@ export default function ProjectDetail() {
               ) : null}
 
               {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
-                <video
-                  src={project.finalVideo.videoUrl}
-                  controls
-                  className="w-full rounded-lg border border-paper/10 bg-black"
-                />
+                <div className="rounded-lg border border-paper/10 bg-panel-raised p-4">
+                  <div className={videoFrameClassName}>
+                    <video
+                      src={project.finalVideo.videoUrl}
+                      controls
+                      className="h-full w-full rounded-md bg-black object-contain"
+                    />
+                  </div>
+                </div>
               ) : null}
 
               {project.finalVideo ? (
@@ -669,11 +674,15 @@ export default function ProjectDetail() {
 
                         {videoJob?.videoUrl ? (
                           <>
-                            <video
-                              src={videoJob.videoUrl}
-                              controls
-                              className="mt-3 w-full rounded-lg border border-paper/10 bg-black"
-                            />
+                            <div className="mt-4 rounded-lg border border-paper/10 bg-panel p-3">
+                              <div className={videoFrameClassName}>
+                                <video
+                                  src={videoJob.videoUrl}
+                                  controls
+                                  className="h-full w-full rounded-md bg-black object-contain"
+                                />
+                              </div>
+                            </div>
 
                             <a
                               href={videoJob.videoUrl}
@@ -1001,6 +1010,18 @@ function getAspectRatioLabel(aspectRatio: string | undefined): string {
   if (aspectRatio === "1:1") return "1:1 Instagram Feed";
   if (aspectRatio === "16:9") return "16:9 YouTube";
   return "9:16 TikTok/Reels/Shorts";
+}
+
+function getVideoFrameClassName(aspectRatio: string | undefined): string {
+  if (aspectRatio === "1:1") {
+    return "mx-auto aspect-square w-full max-w-[560px] overflow-hidden rounded-md bg-black";
+  }
+
+  if (aspectRatio === "16:9") {
+    return "mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-md bg-black";
+  }
+
+  return "mx-auto aspect-9/16 w-full max-w-[360px] overflow-hidden rounded-md bg-black";
 }
 
 function StatusTag({ status }: { status: string }) {

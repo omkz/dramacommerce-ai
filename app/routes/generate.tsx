@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
 import { createShowrunnerJob } from "~/services/project-store.server";
@@ -200,6 +201,13 @@ export default function Generate() {
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
     const isGenerating = navigation.state !== "idle";
+    const [advancedOpen, setAdvancedOpen] = useState(Boolean(actionData?.error));
+
+    useEffect(() => {
+        if (actionData?.error) {
+            setAdvancedOpen(true);
+        }
+    }, [actionData]);
 
     return (
         <main className="min-h-screen bg-ink px-6 py-10 text-bone">
@@ -286,112 +294,128 @@ export default function Generate() {
                             </div>
 
                             <div>
-                                <label
-                                    htmlFor="keySellingPoints"
-                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                <button
+                                    type="button"
+                                    onClick={() => setAdvancedOpen((open) => !open)}
+                                    aria-expanded={advancedOpen}
+                                    className="flex w-full items-center justify-between border-b border-ink/10 pb-3 font-mono text-xs uppercase tracking-widest text-ink/60 transition hover:text-ink"
                                 >
-                                    Key selling points
-                                </label>
-                                <textarea
-                                    id="keySellingPoints"
-                                    name="keySellingPoints"
-                                    rows={3}
-                                    maxLength={500}
-                                    placeholder="Comfortable for long commutes, minimal style, durable outsole, easy to pair with workwear."
-                                    className="mt-2 w-full resize-y border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
-                                />
-                            </div>
+                                    <span>Advanced settings</span>
+                                    <span className="flex items-center gap-2 text-ink/40">
+                                        <span>Target audience required</span>
+                                        <span aria-hidden>{advancedOpen ? "−" : "+"}</span>
+                                    </span>
+                                </button>
 
-                            <div>
-                                <label
-                                    htmlFor="offer"
-                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
-                                >
-                                    Offer or CTA context
-                                </label>
-                                <input
-                                    id="offer"
-                                    name="offer"
-                                    type="text"
-                                    maxLength={180}
-                                    placeholder="Launch week: 20% off, free shipping today"
-                                    className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
-                                />
-                            </div>
+                                <div className={advancedOpen ? "mt-6 space-y-6" : "hidden"}>
+                                    <div>
+                                        <label
+                                            htmlFor="targetAudience"
+                                            className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                        >
+                                            Target audience
+                                        </label>
+                                        <input
+                                            id="targetAudience"
+                                            name="targetAudience"
+                                            type="text"
+                                            placeholder="Office workers, commuters, young professionals"
+                                            className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
+                                        />
+                                    </div>
 
-                            <div>
-                                <label
-                                    htmlFor="targetAudience"
-                                    className="block font-mono text-xs uppercase tracking-widest text-ink/60"
-                                >
-                                    Target audience
-                                </label>
-                                <input
-                                    id="targetAudience"
-                                    name="targetAudience"
-                                    type="text"
-                                    placeholder="Office workers, commuters, young professionals"
-                                    required
-                                    className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
-                                />
-                            </div>
+                                    <div>
+                                        <label
+                                            htmlFor="keySellingPoints"
+                                            className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                        >
+                                            Key selling points
+                                        </label>
+                                        <textarea
+                                            id="keySellingPoints"
+                                            name="keySellingPoints"
+                                            rows={3}
+                                            maxLength={500}
+                                            placeholder="Comfortable for long commutes, minimal style, durable outsole, easy to pair with workwear."
+                                            className="mt-2 w-full resize-y border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
+                                        />
+                                    </div>
 
-                            <div className="grid gap-5 sm:grid-cols-3">
-                                <div>
-                                    <label
-                                        htmlFor="mood"
-                                        className="block font-mono text-xs uppercase tracking-widest text-ink/60"
-                                    >
-                                        Mood
-                                    </label>
-                                    <select
-                                        id="mood"
-                                        name="mood"
-                                        className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
-                                    >
-                                        <option>Cinematic</option>
-                                        <option>Funny</option>
-                                        <option>Premium</option>
-                                        <option>Emotional</option>
-                                        <option>Fast-paced</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label
+                                            htmlFor="offer"
+                                            className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                        >
+                                            Offer or CTA context
+                                        </label>
+                                        <input
+                                            id="offer"
+                                            name="offer"
+                                            type="text"
+                                            maxLength={180}
+                                            placeholder="Launch week: 20% off, free shipping today"
+                                            className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
+                                        />
+                                    </div>
 
-                                <div>
-                                    <label
-                                        htmlFor="platform"
-                                        className="block font-mono text-xs uppercase tracking-widest text-ink/60"
-                                    >
-                                        Platform
-                                    </label>
-                                    <select
-                                        id="platform"
-                                        name="platform"
-                                        className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
-                                    >
-                                        <option>TikTok</option>
-                                        <option>Instagram Reels</option>
-                                        <option>YouTube Shorts</option>
-                                    </select>
-                                </div>
+                                    <div className="grid gap-5 sm:grid-cols-3">
+                                        <div>
+                                            <label
+                                                htmlFor="mood"
+                                                className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                            >
+                                                Mood
+                                            </label>
+                                            <select
+                                                id="mood"
+                                                name="mood"
+                                                className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
+                                            >
+                                                <option>Cinematic</option>
+                                                <option>Funny</option>
+                                                <option>Premium</option>
+                                                <option>Emotional</option>
+                                                <option>Fast-paced</option>
+                                            </select>
+                                        </div>
 
-                                <div>
-                                    <label
-                                        htmlFor="duration"
-                                        className="block font-mono text-xs uppercase tracking-widest text-ink/60"
-                                    >
-                                        Duration
-                                    </label>
-                                    <select
-                                        id="duration"
-                                        name="duration"
-                                        className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
-                                    >
-                                        <option>15 seconds</option>
-                                        <option>30 seconds</option>
-                                        <option>45 seconds</option>
-                                        <option>60 seconds</option>
-                                    </select>
+                                        <div>
+                                            <label
+                                                htmlFor="platform"
+                                                className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                            >
+                                                Platform
+                                            </label>
+                                            <select
+                                                id="platform"
+                                                name="platform"
+                                                className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
+                                            >
+                                                <option>TikTok</option>
+                                                <option>Instagram Reels</option>
+                                                <option>YouTube Shorts</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label
+                                                htmlFor="duration"
+                                                className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                            >
+                                                Duration
+                                            </label>
+                                            <select
+                                                id="duration"
+                                                name="duration"
+                                                className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
+                                            >
+                                                <option>15 seconds</option>
+                                                <option>30 seconds</option>
+                                                <option>45 seconds</option>
+                                                <option>60 seconds</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 

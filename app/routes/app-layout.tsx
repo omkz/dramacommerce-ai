@@ -27,6 +27,17 @@ export default function AppLayout() {
 
           {user ? (
             <div className="flex items-center gap-4 text-sm">
+              <nav className="hidden items-center gap-3 md:flex">
+                <Link to="/dashboard" className="text-ash transition hover:text-bone">
+                  Dashboard
+                </Link>
+                <Link to="/projects" className="text-ash transition hover:text-bone">
+                  Projects
+                </Link>
+                <Link to="/generate" className="text-ash transition hover:text-bone">
+                  Generate
+                </Link>
+              </nav>
               <span className="text-ash">{user.name ?? user.email}</span>
               <a
                 href="/auth/signout"

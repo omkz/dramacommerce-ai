@@ -167,7 +167,7 @@ docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacom
 ## Product Flow
 
 1. Open `/generate`.
-2. Upload a product image and submit a product brief with audience, benefits, offer, platform, mood, duration, and optional aspect ratio.
+2. Upload a product image and submit a product brief with optional audience, benefits, offer, platform, mood, duration, and aspect ratio.
 3. The brief is queued and you land on `/generate/:jobId`, a live Agent Timeline showing Analyze → Story → Director → Prompt → Critic → Editor as each one runs. If Qwen is unavailable, generation fails without creating a mock project.
 4. Once all six stages succeed, the page redirects to the saved project at `/projects/:id`.
 5. Click **Generate 5 Scene Videos** or generate an individual scene.

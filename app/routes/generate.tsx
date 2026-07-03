@@ -35,6 +35,7 @@ const DURATION_OPTIONS = new Set([
 
 const ASPECT_RATIO_OPTIONS = new Set(["9:16", "1:1", "16:9"]);
 const PRODUCT_REFERENCE_MODE_OPTIONS = new Set(["auto", "force", "disable"]);
+const DEFAULT_TARGET_AUDIENCE = "General online shoppers";
 type AspectRatio = NonNullable<ProductBrief["aspectRatio"]>;
 type ProductReferenceMode = NonNullable<ProductBrief["productReferenceMode"]>;
 
@@ -65,7 +66,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const productDescription = getFormString(formData, "productDescription");
     const keySellingPoints = getFormString(formData, "keySellingPoints");
     const offer = getFormString(formData, "offer");
-    const targetAudience = getFormString(formData, "targetAudience");
+    const targetAudience =
+        getFormString(formData, "targetAudience") || DEFAULT_TARGET_AUDIENCE;
     const mood = getFormString(formData, "mood");
     const platform = getFormString(formData, "platform");
     const duration = getFormString(formData, "duration");
@@ -176,10 +178,6 @@ function validateBriefFields({
 }): string | null {
     if (!productName) {
         return "Product name is required.";
-    }
-
-    if (!targetAudience) {
-        return "Target audience is required.";
     }
 
     if (productDescription.length > 500) {
@@ -338,7 +336,7 @@ export default function Generate() {
                                 >
                                     <span>Advanced settings</span>
                                     <span className="flex items-center gap-2 text-ink/40">
-                                        <span>Target audience required</span>
+                                        <span>Optional controls</span>
                                         <span aria-hidden>{advancedOpen ? "−" : "+"}</span>
                                     </span>
                                 </button>
@@ -358,6 +356,10 @@ export default function Generate() {
                                             placeholder="Office workers, commuters, young professionals"
                                             className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none placeholder:text-ink/30 focus:border-flame"
                                         />
+                                        <p className="mt-2 text-xs leading-5 text-ink/50">
+                                            Optional. If left blank, the showrunner targets general
+                                            online shoppers.
+                                        </p>
                                     </div>
 
                                     <div>

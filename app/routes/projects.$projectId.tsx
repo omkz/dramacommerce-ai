@@ -564,8 +564,8 @@ export default function ProjectDetail() {
                   }
                 />
                 <SmallItem
-                  label="Usable as Reference"
-                  value={result.analysis.canUseAsReference ? "Yes" : "No"}
+                  label="Product Reference"
+                  value={result.analysis.canUseAsReference ? "Usable" : "Not usable"}
                 />
               </div>
 
@@ -758,11 +758,16 @@ export default function ProjectDetail() {
                           <span className="font-mono text-xs text-ash">
                             {scene.duration}
                           </span>
-                          {scene.useProductReference ? (
-                            <span className="rounded-full border border-gold/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
-                              Uses reference photo
-                            </span>
-                          ) : null}
+                          <span
+                            className={
+                              scene.useProductReference
+                                ? "rounded-full border border-gold/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
+                                : "rounded-full border border-paper/15 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-ash"
+                            }
+                          >
+                            Product reference:{" "}
+                            {scene.useProductReference ? "usable" : "not used"}
+                          </span>
                           {videoJob ? <StatusTag status={videoJob.status} /> : null}
                         </div>
 

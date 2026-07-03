@@ -8,6 +8,7 @@
     "dev": "react-router dev",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "seed:demo": "node --env-file-if-exists=.env scripts/seed-demo.mjs",
     "worker:video": "node --env-file-if-exists=.env scripts/video-worker.mjs",
     "worker:showrunner": "tsx --env-file-if-exists=.env scripts/showrunner-worker.mts",
     "start": "react-router-serve ./build/server/index.js",

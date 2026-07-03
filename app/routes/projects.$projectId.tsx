@@ -66,7 +66,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Project not found", { status: 404 });
   }
 
-  return project;
+  return { ...project, maxVoiceOverChars: getMaxVoiceOverChars() };
+}
+
+// Wan renders every scene at a fixed WAN_VIDEO_DURATION regardless of the
+// scene's narrative pacing, so a voice-over line longer than that duration
+// gets cut off mid-sentence when muxed (ffmpeg's -shortest caps the output
+// at the video's length). 15 chars/sec is a conservative average spoken
+// pace estimate — used for both the textarea's UX hint and the server-side
+// check below, so they never disagree.
+const SPOKEN_CHARS_PER_SECOND = 15;
+
+function getMaxVoiceOverChars(): number {
+  const durationSeconds = Number(process.env.WAN_VIDEO_DURATION || "5");
+
+  return Math.max(20, Math.round(durationSeconds * SPOKEN_CHARS_PER_SECOND));
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -209,6 +223,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     const promptOverride = String(formData.get("prompt") || "").trim();
     const voiceOverOverride = String(formData.get("voiceOver") || "").trim();
+    const maxVoiceOverChars = getMaxVoiceOverChars();
+
+    if (voiceOverOverride.length > maxVoiceOverChars) {
+      return {
+        error: `Voice-over is too long for a ${process.env.WAN_VIDEO_DURATION || "5"}s scene (max ~${maxVoiceOverChars} characters) — it will get cut off mid-sentence. Shorten it and try again.`,
+      };
+    }
 
     try {
       await createVideoJobForScene(
@@ -753,16 +774,22 @@ export default function ProjectDetail() {
                           <Form method="post" className="mt-4">
                             <input type="hidden" name="intent" value="create-video-task" />
                             <input type="hidden" name="scene" value={scene.scene} />
-                            <label
-                              htmlFor={`voiceOver-${scene.scene}`}
-                              className="block font-mono text-[11px] uppercase tracking-widest text-ash"
-                            >
-                              Voice-over
-                            </label>
+                            <div className="flex items-baseline justify-between">
+                              <label
+                                htmlFor={`voiceOver-${scene.scene}`}
+                                className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                              >
+                                Voice-over
+                              </label>
+                              <span className="font-mono text-[11px] text-ash">
+                                Max {project.maxVoiceOverChars} chars — longer lines get cut off
+                              </span>
+                            </div>
                             <textarea
                               id={`voiceOver-${scene.scene}`}
                               name="voiceOver"
                               defaultValue={currentVoiceOver}
+                              maxLength={project.maxVoiceOverChars}
                               rows={3}
                               className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
                             />

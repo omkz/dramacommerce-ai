@@ -86,6 +86,12 @@ async function checkEnvironment(): Promise<HealthCheck> {
     "DASHSCOPE_API_KEY",
     "QWEN_BASE_URL",
     "DASHSCOPE_VIDEO_BASE_URL",
+    // Missing any of these breaks every page, not just video generation:
+    // auth.server.ts reads them eagerly at module load, so the whole
+    // app-layout loader (and therefore every route under it) throws.
+    "AUTH_SECRET",
+    "AUTH_GOOGLE_ID",
+    "AUTH_GOOGLE_SECRET",
   ];
   const missing = requiredEnv.filter((name) => !process.env[name]);
 

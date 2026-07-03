@@ -124,6 +124,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           project.showPlan.brief.imageUrl,
           scene,
           project.showPlan.brief.showProductOverlay !== false,
+          project.showPlan.brief.aspectRatio,
         );
       } catch (error) {
         console.error(`Failed to enqueue video job for scene ${scene.scene}:`, error);
@@ -217,6 +218,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         project.showPlan.brief.imageUrl,
         scene,
         project.showPlan.brief.showProductOverlay !== false,
+        project.showPlan.brief.aspectRatio,
         promptOverride || undefined,
         voiceOverOverride || undefined,
       );
@@ -279,6 +281,7 @@ async function createVideoJobForScene(
   productImageUrl: string | undefined,
   scene: StoryboardScene,
   showOverlay: boolean,
+  aspectRatio: SavedProject["showPlan"]["brief"]["aspectRatio"],
   promptOverride?: string,
   voiceOverOverride?: string,
 ): Promise<SavedProject> {
@@ -293,6 +296,7 @@ async function createVideoJobForScene(
     productImageUrl,
     useProductReference: scene.useProductReference,
     showOverlay,
+    aspectRatio,
   });
 
   const now = new Date().toISOString();
@@ -888,6 +892,10 @@ export default function ProjectDetail() {
                 <SmallItem label="Platform" value={result.brief.platform} />
                 <SmallItem label="Duration" value={result.brief.duration} />
                 <SmallItem
+                  label="Aspect Ratio"
+                  value={getAspectRatioLabel(result.brief.aspectRatio)}
+                />
+                <SmallItem
                   label="Reference Mode"
                   value={getProductReferenceModeLabel(
                     result.brief.productReferenceMode,
@@ -987,6 +995,12 @@ function getProductReferenceModeLabel(mode: string | undefined): string {
   if (mode === "force") return "Use as packshot";
   if (mode === "disable") return "Disabled";
   return "Auto";
+}
+
+function getAspectRatioLabel(aspectRatio: string | undefined): string {
+  if (aspectRatio === "1:1") return "1:1 Instagram Feed";
+  if (aspectRatio === "16:9") return "16:9 YouTube";
+  return "9:16 TikTok/Reels/Shorts";
 }
 
 function StatusTag({ status }: { status: string }) {

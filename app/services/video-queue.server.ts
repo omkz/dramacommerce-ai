@@ -8,6 +8,7 @@ export type VideoCreateJobData = {
   productImageUrl?: string;
   useProductReference?: boolean;
   showOverlay?: boolean;
+  aspectRatio?: "9:16" | "1:1" | "16:9";
 };
 
 export type VideoPollJobData = {

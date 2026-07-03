@@ -7,6 +7,7 @@ export type ProductBrief = {
   mood: string;
   platform: string;
   duration: string;
+  aspectRatio?: "9:16" | "1:1" | "16:9";
   imageName: string;
   imageUrl?: string;
   // Optional so old stored projects without this field still parse —

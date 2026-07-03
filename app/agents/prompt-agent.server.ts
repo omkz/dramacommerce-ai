@@ -17,10 +17,10 @@ const GET_WAN_VIDEO_CONSTRAINTS_TOOL: QwenTool = {
   },
 };
 
-function getWanVideoConstraints() {
+function getWanVideoConstraints(aspectRatio?: string) {
   const constraints = {
     resolution: process.env.WAN_VIDEO_RESOLUTION || "720P",
-    aspectRatio: process.env.WAN_VIDEO_RATIO || "9:16",
+    aspectRatio: aspectRatio || process.env.WAN_VIDEO_RATIO || "9:16",
     durationSecondsPerScene: Number(process.env.WAN_VIDEO_DURATION || "5"),
   };
 
@@ -29,15 +29,15 @@ function getWanVideoConstraints() {
   return constraints;
 }
 
-const promptAgentToolHandlers: QwenToolHandlers = {
-  get_wan_video_constraints: () => getWanVideoConstraints(),
-};
-
 export async function runPromptAgent(
   brief: ProductBrief,
   scenes: DirectedScene[],
   revisionNotes?: string,
 ): Promise<StoryboardScene[]> {
+  const promptAgentToolHandlers: QwenToolHandlers = {
+    get_wan_video_constraints: () => getWanVideoConstraints(brief.aspectRatio),
+  };
+
   const rawResult = await callQwenJson({
     system: `You are the Video Prompt Agent for DramaCommerce AI. Before writing any videoPrompt text, call get_wan_video_constraints to learn the exact resolution, aspect ratio, and duration Wan will render — don't guess. Return only valid JSON.`,
     user: `

@@ -33,7 +33,9 @@ const DURATION_OPTIONS = new Set([
     "60 seconds",
 ]);
 
+const ASPECT_RATIO_OPTIONS = new Set(["9:16", "1:1", "16:9"]);
 const PRODUCT_REFERENCE_MODE_OPTIONS = new Set(["auto", "force", "disable"]);
+type AspectRatio = NonNullable<ProductBrief["aspectRatio"]>;
 type ProductReferenceMode = NonNullable<ProductBrief["productReferenceMode"]>;
 
 const crew = [
@@ -67,6 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const mood = getFormString(formData, "mood");
     const platform = getFormString(formData, "platform");
     const duration = getFormString(formData, "duration");
+    const aspectRatio = parseAspectRatio(getFormString(formData, "aspectRatio"));
     const showProductOverlay = formData.has("showProductOverlay");
     const productReferenceMode = parseProductReferenceMode(
         getFormString(formData, "productReferenceMode"),
@@ -81,6 +84,7 @@ export async function action({ request }: ActionFunctionArgs) {
         mood,
         platform,
         duration,
+        aspectRatio,
         productReferenceMode,
     });
 
@@ -115,6 +119,7 @@ export async function action({ request }: ActionFunctionArgs) {
         mood,
         platform,
         duration,
+        aspectRatio,
         imageName: uploadedImage.imageName,
         imageUrl: uploadedImage.imageUrl,
         showProductOverlay,
@@ -155,6 +160,7 @@ function validateBriefFields({
     mood,
     platform,
     duration,
+    aspectRatio,
     productReferenceMode,
 }: {
     productName: string;
@@ -165,6 +171,7 @@ function validateBriefFields({
     mood: string;
     platform: string;
     duration: string;
+    aspectRatio: string;
     productReferenceMode: string;
 }): string | null {
     if (!productName) {
@@ -199,11 +206,19 @@ function validateBriefFields({
         return "Choose a valid duration.";
     }
 
+    if (!ASPECT_RATIO_OPTIONS.has(aspectRatio)) {
+        return "Choose a valid aspect ratio.";
+    }
+
     if (!PRODUCT_REFERENCE_MODE_OPTIONS.has(productReferenceMode)) {
         return "Choose a valid product reference mode.";
     }
 
     return null;
+}
+
+function parseAspectRatio(value: string): AspectRatio {
+    return ASPECT_RATIO_OPTIONS.has(value) ? value as AspectRatio : "9:16";
 }
 
 function parseProductReferenceMode(value: string): ProductReferenceMode {
@@ -428,6 +443,7 @@ export default function Generate() {
                                             <select
                                                 id="duration"
                                                 name="duration"
+                                                defaultValue="30 seconds"
                                                 className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
                                             >
                                                 <option>15 seconds</option>
@@ -436,6 +452,31 @@ export default function Generate() {
                                                 <option>60 seconds</option>
                                             </select>
                                         </div>
+                                    </div>
+
+                                    <div>
+                                        <label
+                                            htmlFor="aspectRatio"
+                                            className="block font-mono text-xs uppercase tracking-widest text-ink/60"
+                                        >
+                                            Aspect Ratio
+                                        </label>
+                                        <select
+                                            id="aspectRatio"
+                                            name="aspectRatio"
+                                            defaultValue="9:16"
+                                            className="mt-2 w-full border-b-2 border-ink/15 bg-transparent px-1 py-2 text-ink outline-none focus:border-flame"
+                                        >
+                                            <option value="9:16">
+                                                9:16 — TikTok, Reels, Shorts · Default
+                                            </option>
+                                            <option value="1:1">1:1 — Instagram Feed</option>
+                                            <option value="16:9">16:9 — YouTube</option>
+                                        </select>
+                                        <p className="mt-2 text-xs leading-5 text-ink/50">
+                                            Portrait uses 720x1280 by default, or 1080x1920 when
+                                            WAN_VIDEO_RESOLUTION is set to 1080P.
+                                        </p>
                                     </div>
 
                                     <label className="flex items-start gap-3 text-sm text-ink/70">

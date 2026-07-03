@@ -13,6 +13,7 @@ The multimodal orchestration path is: image → product analysis → script → 
 - Critic Agent reviews the storyboard before render and can trigger one bounded revision pass
 - Director Agent decides, per scene, whether Wan should animate directly from the real product photo (image-to-video) instead of text alone — only for scenes where that's visually coherent
 - Merchant-selectable product reference mode: Auto, force clean packshot/hero reference, or disable image-to-video reference frames
+- Output aspect ratio control: 9:16 portrait by default, with 1:1 and 16:9 available in Advanced settings
 - Structured 5-scene storyboard and editing timeline
 - Postgres project and video job persistence
 - Redis/BullMQ background queue for showrunner generation and Wan video jobs
@@ -97,6 +98,8 @@ DASHSCOPE_TTS_VOICE=Cherry
 
 `WAN_VIDEO_I2V_MODEL` is used instead of `WAN_VIDEO_MODEL`, on the same Wan endpoint, for scenes the Director Agent marks as reference-eligible — Wan then animates directly from the real uploaded product photo instead of text alone. Product reference mode defaults to Auto, can be forced when the merchant intentionally uploads a clean packshot, or disabled for text-to-video-only rendering.
 
+`WAN_VIDEO_RESOLUTION=720P` renders 9:16 as 720x1280 by default. Use `WAN_VIDEO_RESOLUTION=1080P` for 1080x1920 portrait output when provider quota and latency allow it. The project-level aspect ratio is selected in Advanced settings and passed to Wan per video job.
+
 `DASHSCOPE_VIDEO_BASE_URL` does not include `/compatible-mode/v1` because the Wan video API uses `/api/v1/services/...` and `/api/v1/tasks/...`. `DASHSCOPE_TTS_BASE_URL` uses the same style and is usually the same value as `DASHSCOPE_VIDEO_BASE_URL` (same DashScope workspace), kept as a separate var per DashScope surface.
 
 ## Development Commands
@@ -164,7 +167,7 @@ docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacom
 ## Product Flow
 
 1. Open `/generate`.
-2. Upload a product image and submit a product brief with audience, benefits, offer, platform, mood, and duration.
+2. Upload a product image and submit a product brief with audience, benefits, offer, platform, mood, duration, and optional aspect ratio.
 3. The brief is queued and you land on `/generate/:jobId`, a live Agent Timeline showing Analyze → Story → Director → Prompt → Critic → Editor as each one runs. If Qwen is unavailable, generation fails without creating a mock project.
 4. Once all six stages succeed, the page redirects to the saved project at `/projects/:id`.
 5. Click **Generate 5 Scene Videos** or generate an individual scene.

@@ -70,6 +70,8 @@ Merchants can choose the product reference mode on the brief form:
 - Use as packshot forces one hero/reference scene for merchants who intentionally upload a clean centered product photo.
 - Disabled keeps every scene text-to-video.
 
+Aspect ratio is also a project-level brief setting. The default is 9:16 portrait for TikTok, Reels, and Shorts; Advanced settings also support 1:1 for Instagram Feed and 16:9 for YouTube. The chosen ratio is passed to the Prompt Agent's Wan constraints tool and to each queued video render job.
+
 ## Persistence
 
 Postgres stores:

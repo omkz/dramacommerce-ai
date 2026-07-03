@@ -120,12 +120,13 @@ async function createWanTask({
   productImageUrl,
   useProductReference,
   showOverlay,
+  aspectRatio,
 }) {
   const imgDataUrl =
     useProductReference && productImageUrl
       ? await readLocalImageAsDataUrl(productImageUrl)
       : null;
-  const task = await createWanTextToVideoTask(prompt, imgDataUrl);
+  const task = await createWanTextToVideoTask(prompt, imgDataUrl, aspectRatio);
   const now = new Date().toISOString();
   const nextPollAt = new Date(Date.now() + POLL_DELAY_MS).toISOString();
 
@@ -556,14 +557,14 @@ const WAN_LEGACY_T2V_SIZES = {
   "1080P": { "9:16": "1080*1920", "16:9": "1920*1080", "1:1": "1080*1080" },
 };
 
-function getWanLegacyT2vSize() {
+function getWanLegacyT2vSize(aspectRatio) {
   const resolution = process.env.WAN_VIDEO_RESOLUTION || "720P";
-  const ratio = process.env.WAN_VIDEO_RATIO || "9:16";
+  const ratio = aspectRatio || process.env.WAN_VIDEO_RATIO || "9:16";
 
   return WAN_LEGACY_T2V_SIZES[resolution]?.[ratio] || "720*1280";
 }
 
-async function createWanTextToVideoTask(prompt, imgDataUrl) {
+async function createWanTextToVideoTask(prompt, imgDataUrl, aspectRatio) {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.DASHSCOPE_VIDEO_BASE_URL;
   const model = imgDataUrl
@@ -585,7 +586,7 @@ async function createWanTextToVideoTask(prompt, imgDataUrl) {
   if (imgDataUrl) {
     parameters.resolution = process.env.WAN_VIDEO_RESOLUTION || "720P";
   } else {
-    parameters.size = getWanLegacyT2vSize();
+    parameters.size = getWanLegacyT2vSize(aspectRatio);
   }
 
   const response = await fetch(

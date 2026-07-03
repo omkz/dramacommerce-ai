@@ -26,6 +26,7 @@ const showPlan = {
     mood: "Premium",
     platform: "TikTok",
     duration: "30 seconds",
+    aspectRatio: "9:16",
     imageName: "demo-product-reference.jpg",
     productReferenceMode: "auto",
     showProductOverlay: true,

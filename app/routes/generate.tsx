@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useNavigation } from "react-router";
-import type { ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { createShowrunnerJob } from "~/services/project-store.server";
 import { enqueueShowrunnerGenerateJob } from "~/services/showrunner-queue.server";
 import {
@@ -56,6 +56,12 @@ export function meta() {
             content: "Generate a short product drama ad from one product photo.",
         },
     ];
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
+    await requireUser(request);
+
+    return null;
 }
 
 export async function action({ request }: ActionFunctionArgs) {

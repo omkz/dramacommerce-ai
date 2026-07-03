@@ -11,6 +11,16 @@ export type ProductBrief = {
   imageUrl?: string;
 };
 
+export type ProductAnalysis = {
+  category: string;
+  colors: string[];
+  material: string;
+  brandingVisible: string | null;
+  quality: "good" | "medium" | "poor";
+  canUseAsReference: boolean;
+  issues: string[];
+};
+
 export type StoryPackage = {
   concept: string;
   hook: string;
@@ -23,6 +33,9 @@ export type DirectedScene = {
   title: string;
   visual: string;
   voiceOver: string;
+  camera: string;
+  emotion: string;
+  useProductReference: boolean;
 };
 
 export type StoryboardScene = DirectedScene & {
@@ -38,6 +51,7 @@ export type EditorPackage = {
 export type ShowPlan = {
   source: "qwen" | "mock";
   brief: ProductBrief;
+  analysis?: ProductAnalysis;
   concept: string;
   hook: string;
   voiceOver: string;

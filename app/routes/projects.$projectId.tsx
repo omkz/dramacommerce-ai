@@ -28,29 +28,7 @@ import {
   checkVideoStitchRateLimit,
 } from "~/services/rate-limit.server";
 import type { StoryboardScene } from "~/types/showrunner";
-
-const pipelineStages = [
-  {
-    name: "Story Agent",
-    output: "Concept, hook, voice-over",
-    detail: "Turns the product brief into a short-drama narrative spine.",
-  },
-  {
-    name: "Director Agent",
-    output: "Five-scene storyboard",
-    detail: "Breaks the story into timed vertical-video scenes and shots.",
-  },
-  {
-    name: "Prompt Agent",
-    output: "Wan video prompts",
-    detail: "Adds detailed text-to-video prompts for each directed scene.",
-  },
-  {
-    name: "Editor Agent",
-    output: "Timeline, caption, CTA",
-    detail: "Prepares the edit plan and social publishing package.",
-  },
-];
+import { AgentTimeline, type TimelineStageState } from "~/components/agent-timeline";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const user = await requireUser(request);
@@ -310,6 +288,7 @@ async function createVideoJobForScene(
     prompt,
     voiceOver,
     productImageUrl,
+    useProductReference: scene.useProductReference,
   });
 
   const now = new Date().toISOString();
@@ -321,6 +300,7 @@ async function createVideoJobForScene(
     status: "QUEUED",
     prompt,
     voiceOver,
+    useProductReference: scene.useProductReference,
     attempts: 0,
     nextPollAt: new Date(Date.now() + 30_000).toISOString(),
     createdAt: now,
@@ -351,6 +331,44 @@ function isInFlightJobStatus(status: string): boolean {
     status === "RUNNING" ||
     status === "UNKNOWN"
   );
+}
+
+function buildRenderStitchStates(
+  project: SavedProject,
+): { render: TimelineStageState; stitch: TimelineStageState } {
+  const sceneCount = project.showPlan.storyboard.length;
+  const videoJobs = project.videoJobs ?? [];
+
+  let render: TimelineStageState = "pending";
+
+  if (videoJobs.length > 0) {
+    if (videoJobs.some((job) => isInFlightJobStatus(job.status))) {
+      render = "active";
+    } else if (
+      sceneCount > 0 &&
+      videoJobs.filter((job) => job.status === "SUCCEEDED").length === sceneCount
+    ) {
+      render = "done";
+    } else if (videoJobs.some((job) => isFailedJobStatus(job.status))) {
+      render = "failed";
+    } else {
+      render = "active";
+    }
+  }
+
+  let stitch: TimelineStageState = "pending";
+
+  if (project.finalVideo) {
+    if (isInFlightJobStatus(project.finalVideo.status)) {
+      stitch = "active";
+    } else if (project.finalVideo.status === "SUCCEEDED") {
+      stitch = "done";
+    } else {
+      stitch = "failed";
+    }
+  }
+
+  return { render, stitch };
 }
 
 function slugify(value: string): string {
@@ -514,32 +532,51 @@ export default function ProjectDetail() {
             </p>
           </div>
 
-          <ResultCard title="Production Crew" eyebrow="Credits">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {pipelineStages.map((stage, index) => (
-                <div
-                  key={stage.name}
-                  className="rounded-sm border border-paper/10 bg-panel-raised p-4"
-                >
-                  <p className="font-mono text-xs text-gold">
-                    Stage {index + 1}
-                  </p>
-
-                  <h3 className="mt-2 font-display font-medium text-bone">
-                    {stage.name}
-                  </h3>
-
-                  <p className="mt-2 text-sm font-medium text-bone/80">
-                    {stage.output}
-                  </p>
-
-                  <p className="mt-3 text-sm leading-6 text-ash">
-                    {stage.detail}
-                  </p>
-                </div>
-              ))}
-            </div>
+          <ResultCard title="Production Timeline" eyebrow="Credits">
+            <AgentTimeline
+              states={{
+                analyze: "done",
+                story: "done",
+                director: "done",
+                prompt: "done",
+                critic: "done",
+                editor: "done",
+                ...buildRenderStitchStates(project),
+              }}
+            />
           </ResultCard>
+
+          {result.analysis ? (
+            <ResultCard title="Product Analysis" eyebrow="Vision">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <SmallItem label="Category" value={result.analysis.category} />
+                <SmallItem label="Colors" value={result.analysis.colors.join(", ")} />
+                <SmallItem label="Material" value={result.analysis.material} />
+                <SmallItem
+                  label="Branding"
+                  value={result.analysis.brandingVisible || "None visible"}
+                />
+                <SmallItem
+                  label="Photo Quality"
+                  value={
+                    result.analysis.quality.charAt(0).toUpperCase() +
+                    result.analysis.quality.slice(1)
+                  }
+                />
+                <SmallItem
+                  label="Usable as Reference"
+                  value={result.analysis.canUseAsReference ? "Yes" : "No"}
+                />
+              </div>
+
+              {result.analysis.issues.length > 0 ? (
+                <p className="mt-4 text-sm leading-6 text-ash">
+                  <span className="font-semibold text-bone">Issues noted: </span>
+                  {result.analysis.issues.join(", ")}
+                </p>
+              ) : null}
+            </ResultCard>
+          ) : null}
 
           <ResultCard title="Product Brief" eyebrow="Inputs">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -721,6 +758,11 @@ export default function ProjectDetail() {
                           <span className="font-mono text-xs text-ash">
                             {scene.duration}
                           </span>
+                          {scene.useProductReference ? (
+                            <span className="rounded-full border border-gold/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                              Uses reference photo
+                            </span>
+                          ) : null}
                           {videoJob ? <StatusTag status={videoJob.status} /> : null}
                         </div>
 

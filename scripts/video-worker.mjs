@@ -2,7 +2,7 @@ import { Queue, Worker } from "bullmq";
 import pg from "pg";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm, writeFile, copyFile } from "node:fs/promises";
+import { mkdir, rm, writeFile, copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
@@ -112,8 +112,19 @@ async function updateVideoJobFailure(projectId, scene, errorMessage) {
   );
 }
 
-async function createWanTask({ projectId, scene, prompt, voiceOver, productImageUrl }) {
-  const task = await createWanTextToVideoTask(prompt);
+async function createWanTask({
+  projectId,
+  scene,
+  prompt,
+  voiceOver,
+  productImageUrl,
+  useProductReference,
+}) {
+  const imgDataUrl =
+    useProductReference && productImageUrl
+      ? await readLocalImageAsDataUrl(productImageUrl)
+      : null;
+  const task = await createWanTextToVideoTask(prompt, imgDataUrl);
   const now = new Date().toISOString();
   const nextPollAt = new Date(Date.now() + POLL_DELAY_MS).toISOString();
 
@@ -132,7 +143,7 @@ async function createWanTask({ projectId, scene, prompt, voiceOver, productImage
 
   await queue.add(
     "video.poll",
-    { projectId, scene, taskId: task.taskId, voiceOver, productImageUrl },
+    { projectId, scene, taskId: task.taskId, voiceOver, productImageUrl, useProductReference },
     {
       delay: POLL_DELAY_MS,
       attempts: 10,
@@ -143,7 +154,14 @@ async function createWanTask({ projectId, scene, prompt, voiceOver, productImage
   );
 }
 
-async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUrl }) {
+async function pollWanTask({
+  projectId,
+  scene,
+  taskId,
+  voiceOver,
+  productImageUrl,
+  useProductReference,
+}) {
   const task = await queryWanVideoTask(taskId);
   const now = new Date().toISOString();
   const nextPollAt = getNextPollAt(task.status);
@@ -159,6 +177,7 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUr
         productImageUrl,
         projectId,
         scene,
+        useProductReference,
       );
     } catch (error) {
       processingWarning =
@@ -198,7 +217,7 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUr
   if (nextPollAt) {
     await queue.add(
       "video.poll",
-      { projectId, scene, taskId, voiceOver, productImageUrl },
+      { projectId, scene, taskId, voiceOver, productImageUrl, useProductReference },
       {
         delay: POLL_DELAY_MS,
         attempts: 10,
@@ -210,7 +229,14 @@ async function pollWanTask({ projectId, scene, taskId, voiceOver, productImageUr
   }
 }
 
-async function narrateAndMuxScene(videoUrl, voiceOver, productImageUrl, projectId, scene) {
+async function narrateAndMuxScene(
+  videoUrl,
+  voiceOver,
+  productImageUrl,
+  projectId,
+  scene,
+  useProductReference,
+) {
   const tempDir = path.join(os.tmpdir(), `dramacommerce-narrate-${projectId}-${scene}`);
 
   try {
@@ -238,10 +264,12 @@ async function narrateAndMuxScene(videoUrl, voiceOver, productImageUrl, projectI
     // bad ffmpeg filter input, etc.), fall back to the narrated clip
     // without the overlay instead of losing the TTS work that already
     // succeeded, same graceful-degradation philosophy as the voice-over
-    // fallback one level up in pollWanTask.
+    // fallback one level up in pollWanTask. Skipped entirely when this
+    // scene already used the real photo as Wan's i2v first frame —
+    // stamping the same photo on top again would be redundant.
     let finalPath = muxedOutputPath;
 
-    if (productImageUrl) {
+    if (productImageUrl && !useProductReference) {
       try {
         const productImagePath = path.join(
           tempDir,
@@ -491,13 +519,43 @@ async function runFfmpegConcat(listPath, outputPath) {
   }
 }
 
-async function createWanTextToVideoTask(prompt) {
+async function readLocalImageAsDataUrl(url) {
+  const filename = url.slice("/uploads/".length);
+
+  if (!filename || filename.includes("/") || filename.includes("..")) {
+    throw new Error(`Invalid upload path: ${url}`);
+  }
+
+  const buffer = await readFile(path.join(UPLOAD_DIR, filename));
+  const ext = path.extname(filename).toLowerCase();
+  const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+
+  return `data:${mime};base64,${buffer.toString("base64")}`;
+}
+
+async function createWanTextToVideoTask(prompt, imgDataUrl) {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.DASHSCOPE_VIDEO_BASE_URL;
-  const model = process.env.WAN_VIDEO_MODEL || "wan2.1-t2v-turbo";
+  const model = imgDataUrl
+    ? process.env.WAN_VIDEO_I2V_MODEL || "wan2.1-i2v-turbo"
+    : process.env.WAN_VIDEO_MODEL || "wan2.1-t2v-turbo";
 
   if (!apiKey || !baseUrl) {
     throw new Error("Wan video environment variables are not configured.");
+  }
+
+  const parameters = {
+    resolution: process.env.WAN_VIDEO_RESOLUTION || "720P",
+    duration: Number(process.env.WAN_VIDEO_DURATION || "5"),
+    prompt_extend: true,
+    watermark: true,
+  };
+
+  // Wan i2v derives aspect ratio from the reference image itself — `ratio`
+  // is t2v-only (nothing to derive it from without an image), so it's
+  // omitted here rather than risk the API rejecting an unexpected param.
+  if (!imgDataUrl) {
+    parameters.ratio = process.env.WAN_VIDEO_RATIO || "9:16";
   }
 
   const response = await fetch(
@@ -511,14 +569,8 @@ async function createWanTextToVideoTask(prompt) {
       },
       body: JSON.stringify({
         model,
-        input: { prompt },
-        parameters: {
-          resolution: process.env.WAN_VIDEO_RESOLUTION || "720P",
-          ratio: process.env.WAN_VIDEO_RATIO || "9:16",
-          duration: Number(process.env.WAN_VIDEO_DURATION || "5"),
-          prompt_extend: true,
-          watermark: true,
-        },
+        input: imgDataUrl ? { prompt, img_url: imgDataUrl } : { prompt },
+        parameters,
       }),
     },
   );

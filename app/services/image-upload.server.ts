@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileTypeFromBuffer } from "file-type";
@@ -70,15 +70,41 @@ async function getValidatedProductImage(
 export async function deleteUploadedFile(
   url: string | null | undefined,
 ): Promise<void> {
-  if (!url || !url.startsWith("/uploads/")) {
+  const filePath = resolveUploadedFilePath(url);
+
+  if (!filePath) {
     return;
+  }
+
+  await rm(filePath, { force: true });
+}
+
+export async function readUploadedImageAsDataUrl(
+  url: string | null | undefined,
+): Promise<string> {
+  const filePath = resolveUploadedFilePath(url);
+
+  if (!filePath) {
+    throw new Error(`Invalid uploaded image path: ${url}`);
+  }
+
+  const buffer = await readFile(filePath);
+  const detectedType = await fileTypeFromBuffer(buffer);
+  const mime = detectedType?.mime ?? "image/jpeg";
+
+  return `data:${mime};base64,${buffer.toString("base64")}`;
+}
+
+function resolveUploadedFilePath(url: string | null | undefined): string | null {
+  if (!url || !url.startsWith("/uploads/")) {
+    return null;
   }
 
   const filename = url.slice("/uploads/".length);
 
   if (!filename || filename.includes("/") || filename.includes("..")) {
-    return;
+    return null;
   }
 
-  await rm(path.join(UPLOAD_DIR, filename), { force: true });
+  return path.join(UPLOAD_DIR, filename);
 }

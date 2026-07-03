@@ -2,9 +2,25 @@ import { z } from "zod";
 import type {
   DirectedScene,
   EditorPackage,
+  ProductAnalysis,
   StoryboardScene,
   StoryPackage,
 } from "~/types/showrunner";
+
+const productAnalysisSchema = z.object({
+  category: z.string(),
+  colors: z.array(z.string()),
+  material: z.string(),
+  brandingVisible: z.string().nullable(),
+  quality: z.enum(["good", "medium", "poor"]),
+  canUseAsReference: z.boolean(),
+  issues: z.array(z.string()),
+});
+
+const criticResultSchema = z.object({
+  approved: z.boolean(),
+  notes: z.string().optional(),
+});
 
 const storyPackageSchema = z.object({
   concept: z.string(),
@@ -18,6 +34,9 @@ const directedSceneSchema = z.object({
   title: z.string(),
   visual: z.string(),
   voiceOver: z.string(),
+  camera: z.string(),
+  emotion: z.string(),
+  useProductReference: z.boolean(),
 });
 
 const directorPackageSchema = z.object({
@@ -37,6 +56,17 @@ const editorPackageSchema = z.object({
   caption: z.string(),
   cta: z.string(),
 });
+
+export function validateProductAnalysis(raw: unknown): ProductAnalysis {
+  return productAnalysisSchema.parse(raw);
+}
+
+export function validateCriticResult(raw: unknown): {
+  approved: boolean;
+  notes?: string;
+} {
+  return criticResultSchema.parse(raw);
+}
 
 export function validateStoryPackage(raw: unknown): StoryPackage {
   return storyPackageSchema.parse(raw);

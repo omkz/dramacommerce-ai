@@ -1,16 +1,19 @@
 # DramaCommerce AI
 
-DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene narrated video clip using Qwen/Wan/DashScope TTS on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
+DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app analyzes the photo, generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene narrated video clip using Qwen/Wan/DashScope TTS on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
 
 ## Features
 
 - Product brief form with image upload
-- Qwen-powered multi-agent showrunner pipeline
+- Qwen-powered multi-agent showrunner pipeline, run as a background job with a live-updating Agent Timeline UI (Analyze → Story → Director → Prompt → Critic → Editor → Render → Stitch)
+- Vision-based Analyze Agent grounds the story in what the photo actually shows (category, colors, material, quality) instead of guessing from text alone
+- Critic Agent reviews the storyboard before render and can trigger one bounded revision pass
+- Director Agent decides, per scene, whether Wan should animate directly from the real product photo (image-to-video) instead of text alone — only for scenes where that's visually coherent
 - Structured 5-scene storyboard and editing timeline
 - Postgres project and video job persistence
-- Redis/BullMQ background queue for Wan video jobs
+- Redis/BullMQ background queue for showrunner generation and Wan video jobs
 - Local image storage in `uploads/`
-- Wan text-to-video task creation for any or all 5 scenes
+- Wan text-to-video and image-to-video task creation for any or all 5 scenes
 - DashScope TTS voice-over synthesis muxed onto each scene clip
 - Worker-driven video task polling and video preview
 - ffmpeg-based stitching of all 5 scene clips into one final video
@@ -46,20 +49,22 @@ Health check endpoint:
 http://localhost:5173/health
 ```
 
-Run the video worker in a second terminal when testing Wan video generation:
+Run both workers in separate terminals — one for show plan generation, one for video:
 
 ```bash
+pnpm run worker:showrunner
 pnpm run worker:video
 ```
 
-The worker shells out to `ffmpeg` to stitch the 5 scene clips into a final video, so it must be installed locally (e.g. `apt-get install ffmpeg`, `brew install ffmpeg`) — the Docker image already includes it.
+The video worker shells out to `ffmpeg` to stitch the 5 scene clips into a final video, so it must be installed locally (e.g. `apt-get install ffmpeg`, `brew install ffmpeg`) — the Docker image already includes it.
 
-> **Without this running, "Generate Video" clicks stay stuck at `QUEUED` forever.**
-> The web app only enqueues a Redis/BullMQ job; a separate `worker:video`
-> process is what actually calls the Wan API and polls task status. This is
-> two processes by design (see [Deployment Notes](#deployment-notes)), not a
-> bug — if a video job looks frozen, check whether the worker is running
-> before assuming Wan itself is slow.
+> **Without these running, both "Generate Product Ad" and "Generate Video" clicks stay stuck forever.**
+> The web app only enqueues Redis/BullMQ jobs; separate `worker:showrunner`
+> and `worker:video` processes are what actually call Qwen/Wan and update
+> job status. This is three processes by design (see
+> [Deployment Notes](#deployment-notes)), not a bug — if generation looks
+> frozen, check whether the relevant worker is running before assuming the
+> provider itself is slow.
 
 ## Environment Variables
 
@@ -70,9 +75,11 @@ REDIS_URL=redis://localhost:6379
 DASHSCOPE_API_KEY=sk-xxxxx
 QWEN_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen-plus
+QWEN_VISION_MODEL=qwen3-vl-flash
 
 DASHSCOPE_VIDEO_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com
 WAN_VIDEO_MODEL=wan2.1-t2v-turbo
+WAN_VIDEO_I2V_MODEL=wan2.1-i2v-turbo
 WAN_VIDEO_RESOLUTION=720P
 WAN_VIDEO_RATIO=9:16
 WAN_VIDEO_DURATION=5
@@ -82,7 +89,9 @@ DASHSCOPE_TTS_MODEL=qwen3-tts-flash
 DASHSCOPE_TTS_VOICE=Cherry
 ```
 
-`QWEN_BASE_URL` includes `/compatible-mode/v1` because it is used for OpenAI-compatible chat completions.
+`QWEN_BASE_URL` includes `/compatible-mode/v1` because it is used for OpenAI-compatible chat completions. `QWEN_VISION_MODEL` reuses the same base URL/key for the Analyze Agent's image understanding call.
+
+`WAN_VIDEO_I2V_MODEL` is used instead of `WAN_VIDEO_MODEL`, on the same Wan endpoint, for scenes the Director Agent marks as reference-eligible — Wan then animates directly from the real uploaded product photo instead of text alone.
 
 `DASHSCOPE_VIDEO_BASE_URL` does not include `/compatible-mode/v1` because the Wan video API uses `/api/v1/services/...` and `/api/v1/tasks/...`. `DASHSCOPE_TTS_BASE_URL` uses the same style and is usually the same value as `DASHSCOPE_VIDEO_BASE_URL` (same DashScope workspace), kept as a separate var per DashScope surface.
 
@@ -90,6 +99,7 @@ DASHSCOPE_TTS_VOICE=Cherry
 
 ```bash
 pnpm dev
+pnpm run worker:showrunner
 pnpm run worker:video
 pnpm run db:migrate
 pnpm run db:generate
@@ -99,6 +109,7 @@ pnpm run start
 ```
 
 - `pnpm dev` starts the React Router dev server.
+- `pnpm run worker:showrunner` runs the Story/Director/Prompt/Editor agent pipeline as a background job (via `tsx`, importing the app's own agent code directly rather than duplicating it).
 - `pnpm run worker:video` processes Redis/BullMQ Wan video jobs.
 - `pnpm run db:migrate` applies Drizzle migrations to Postgres.
 - `pnpm run db:generate` generates a new Drizzle migration after schema changes.
@@ -113,21 +124,26 @@ User
   ↓
 React Router full-stack app
   ├─ /generate product brief form
-  ├─ Qwen multi-agent showrunner pipeline
+  ├─ Redis/BullMQ showrunner queue → worker:showrunner (Analyze/Story/Director/Prompt/Critic/Editor agents)
+  ├─ /generate/:jobId live Agent Timeline (polls showrunner_jobs status)
   ├─ Postgres project store
-  ├─ Redis/BullMQ video queue
+  ├─ Redis/BullMQ video queue → worker:video (Render/Stitch)
   ├─ local image uploads
   └─ /projects/:id project detail
-       ├─ storyboard
-       ├─ video prompts
-       └─ Wan Scene 1 video task
+       ├─ Agent Timeline (Analyze…Editor always done, Render/Stitch live)
+       ├─ storyboard + video prompts
+       └─ Wan per-scene video tasks + final stitch
               ↓
         Alibaba Cloud Model Studio / DashScope
 ```
 
-The showrunner flow is split into four Qwen-powered stages: Story Agent, Director Agent, Prompt Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects.
+The showrunner flow is split into six Qwen-powered stages: Analyze Agent (vision), Story Agent, Director Agent, Prompt Agent, Critic Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects. `/generate`'s action no longer runs these stages inline — it creates a `showrunner_jobs` row and enqueues a job; `worker:showrunner` runs `generateShowPlan` stage by stage, writing status back after each stage so `/generate/:jobId` can show live progress. On success it saves the project and the job redirects there; on failure (retries exhausted) it records the error and cleans up the uploaded image, same as the old synchronous failure path.
 
-Wan video generation is queued. The web app stores video job state in Postgres and enqueues work in Redis/BullMQ. The `worker:video` process creates Wan tasks, schedules polling jobs, and updates status, task IDs, attempts, video URLs, and provider errors.
+The Analyze Agent looks at the actual product photo and returns category/colors/material/branding/quality, which grounds the Story and Director agents instead of them guessing from the text brief alone. The Director Agent uses that analysis to decide, per scene, whether the real photo is a good fit as Wan's literal first frame (`useProductReference`) — normally only the final hero/reveal scene, since forcing a static photo onto an unrelated action shot produces broken video. The Critic Agent reviews the finished storyboard, including sanity-checking those reference-image choices, and can trigger exactly one revision pass before the plan is saved.
+
+Wan video generation is queued the same way. The web app stores video job state in Postgres and enqueues work in Redis/BullMQ, including each scene's `useProductReference` flag. The `worker:video` process creates Wan tasks (text-to-video by default, or image-to-video with the real uploaded photo when `useProductReference` is true), schedules polling jobs, and updates status, task IDs, attempts, video URLs, and provider errors.
+
+The shared `AgentTimeline` component (`app/components/agent-timeline.tsx`) renders all 8 stages (Analyze, Story, Director, Prompt, Critic, Editor, Render, Stitch) and is used on both `/generate/:jobId` (for the first 6, live) and `/projects/:id` (for all 8 — the first 6 always "done" since a project only exists once they succeed, Render/Stitch reflecting live `video_jobs`/`final_videos` state).
 
 ## Docker
 
@@ -136,16 +152,17 @@ docker build -t dramacommerce-ai .
 docker run --rm --env-file .env dramacommerce-ai pnpm run db:migrate
 docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 dramacommerce-ai
 docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce-ai pnpm run worker:video
+docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacommerce-ai pnpm run worker:showrunner
 ```
 
 ## Product Flow
 
 1. Open `/generate`.
 2. Upload a product image and submit a product brief with audience, benefits, offer, platform, mood, and duration.
-3. The app generates a showrunner plan using Qwen. If Qwen is unavailable, generation fails without creating a mock project.
-4. The result is saved as a project and shown at `/projects/:id`.
+3. The brief is queued and you land on `/generate/:jobId`, a live Agent Timeline showing Analyze → Story → Director → Prompt → Critic → Editor as each one runs. If Qwen is unavailable, generation fails without creating a mock project.
+4. Once all six stages succeed, the page redirects to the saved project at `/projects/:id`.
 5. Click **Generate 5 Scene Videos** or generate an individual scene.
-6. The project page auto-refreshes scene and final-video status while Wan jobs are in progress.
+6. The project page auto-refreshes scene and final-video status (shown as the Render/Stitch stages of the same timeline) while Wan jobs are in progress.
 7. Once all scene videos succeed, click **Stitch Final Ad** to create the downloadable product drama ad.
 
 ## Deployment Notes

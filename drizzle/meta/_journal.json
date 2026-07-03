@@ -36,6 +36,20 @@
       "when": 1783044322232,
       "tag": "0004_aromatic_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783047527745,
+      "tag": "0005_slim_manta",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783052941316,
+      "tag": "0006_old_zarek",
+      "breakpoints": true
     }
   ]
 }

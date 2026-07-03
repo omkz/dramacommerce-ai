@@ -1,8 +1,7 @@
 import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { ActionFunctionArgs } from "react-router";
-import { ZodError } from "zod";
-import { saveProject } from "~/services/project-store.server";
-import { generateShowPlan } from "~/services/showrunner.server";
+import { createShowrunnerJob } from "~/services/project-store.server";
+import { enqueueShowrunnerGenerateJob } from "~/services/showrunner-queue.server";
 import {
     assertValidProductImage,
     deleteUploadedFile,
@@ -10,11 +9,6 @@ import {
 } from "~/services/image-upload.server";
 import { checkGenerateRateLimit } from "~/services/rate-limit.server";
 import { requireUser } from "~/services/auth.server";
-import {
-    QwenApiError,
-    QwenConfigurationError,
-    QwenResponseError,
-} from "~/services/qwen.server";
 
 const MOOD_OPTIONS = new Set([
     "Cinematic",
@@ -38,9 +32,11 @@ const DURATION_OPTIONS = new Set([
 ]);
 
 const crew = [
+    { role: "Analyze Agent", job: "Reads the product photo for category, colors, and quality" },
     { role: "Story Agent", job: "Writes the concept, hook, and voice-over" },
     { role: "Director Agent", job: "Blocks the five-scene storyboard" },
     { role: "Prompt Agent", job: "Writes Wan-ready video prompts per scene" },
+    { role: "Critic Agent", job: "Reviews the storyboard before it goes to render" },
     { role: "Editor Agent", job: "Cuts the timeline, caption, and CTA" },
 ];
 
@@ -113,27 +109,25 @@ export async function action({ request }: ActionFunctionArgs) {
         imageUrl: uploadedImage.imageUrl,
     };
 
-    let showPlan: Awaited<ReturnType<typeof generateShowPlan>>;
+    const showrunnerJobId = crypto.randomUUID();
 
     try {
-        showPlan = await generateShowPlan(brief);
+        await createShowrunnerJob(showrunnerJobId, user.id, brief);
+        await enqueueShowrunnerGenerateJob({
+            showrunnerJobId,
+            userId: user.id,
+        });
     } catch (error) {
-        console.error("Failed to generate show plan:", error);
+        console.error("Failed to queue show plan generation:", error);
         await deleteUploadedFile(uploadedImage.imageUrl);
 
         return {
-            error: getQwenErrorMessage(error),
+            error:
+                "Unable to queue generation. Check Redis/BullMQ configuration and try again.",
         };
     }
 
-    try {
-        const project = await saveProject(showPlan, user.id);
-
-        return redirect(`/projects/${project.id}`);
-    } catch (error) {
-        await deleteUploadedFile(uploadedImage.imageUrl);
-        throw error;
-    }
+    return redirect(`/generate/${showrunnerJobId}`);
 }
 
 function getFormString(formData: FormData, key: string): string {
@@ -202,26 +196,6 @@ function getUploadErrorMessage(error: unknown): string {
     return "Unable to upload the product image.";
 }
 
-function getQwenErrorMessage(error: unknown): string {
-    if (error instanceof QwenConfigurationError) {
-        return "Qwen is not configured. Set DASHSCOPE_API_KEY and QWEN_BASE_URL before generating.";
-    }
-
-    if (error instanceof QwenApiError) {
-        return `Qwen request failed with status ${error.status}. Check the API key, base URL, model, or provider status.`;
-    }
-
-    if (error instanceof QwenResponseError) {
-        return "Qwen returned an invalid response. Try again, or adjust the prompt/schema if this keeps happening.";
-    }
-
-    if (error instanceof ZodError) {
-        return "Qwen returned a show plan that does not match the required schema.";
-    }
-
-    return "Unable to generate a show plan with Qwen. Try again later.";
-}
-
 export default function Generate() {
     const actionData = useActionData<typeof action>();
     const navigation = useNavigation();
@@ -246,8 +220,8 @@ export default function Generate() {
 
                         <p className="mt-4 max-w-xl text-ash">
                             Upload one product photo and describe the product, audience,
-                            offer, mood, and platform. Four Qwen agents turn the brief into
-                            a story, storyboard, Wan prompts, and edit plan.
+                            offer, mood, and platform. Six Qwen agents analyze the photo and
+                            turn the brief into a story, storyboard, Wan prompts, and edit plan.
                         </p>
 
                         <Form
@@ -426,14 +400,13 @@ export default function Generate() {
                                 disabled={isGenerating}
                                 className="w-full rounded-sm bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
                             >
-                                {isGenerating ? "Generating product ad..." : "Generate Product Ad"}
+                                {isGenerating ? "Queuing generation..." : "Generate Product Ad"}
                             </button>
 
                             {isGenerating ? (
                                 <div className="rounded-sm border border-ink/15 bg-ink/5 p-4 text-sm leading-6 text-ink/70">
-                                    Running the Story, Director, Prompt, and Editor agents. This can
-                                    take longer than a single model call because each stage validates
-                                    structured output before continuing.
+                                    Queuing your brief for the production crew. You'll land on a
+                                    live status page showing each agent as it runs.
                                 </div>
                             ) : null}
 

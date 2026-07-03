@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 type QwenMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
@@ -188,6 +190,85 @@ export async function callQwenJson({
   throw new QwenResponseError(
     `Qwen tool-calling loop did not resolve after ${MAX_TOOL_CALL_ROUNDS} rounds.`,
   );
+}
+
+export async function callQwenVisionJson({
+  system,
+  user,
+  imageDataUrl,
+}: {
+  system: string;
+  user: string;
+  imageDataUrl: string;
+}): Promise<unknown> {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const baseUrl = process.env.QWEN_BASE_URL;
+  const model = process.env.QWEN_VISION_MODEL || "qwen3-vl-flash";
+
+  if (!apiKey || !baseUrl) {
+    throw new QwenConfigurationError();
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: user },
+            { type: "image_url", image_url: { url: imageDataUrl } },
+          ],
+        },
+      ],
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new QwenApiError(response.status, errorText);
+  }
+
+  const data = (await response.json()) as QwenChatResponse;
+  const message = data.choices?.[0]?.message;
+
+  if (!message?.content) {
+    throw new QwenResponseError("Qwen returned an empty response.");
+  }
+
+  try {
+    return JSON.parse(cleanJsonResponse(message.content));
+  } catch (error) {
+    throw new QwenResponseError("Qwen returned invalid JSON.");
+  }
+}
+
+export function getQwenErrorMessage(error: unknown): string {
+  if (error instanceof QwenConfigurationError) {
+    return "Qwen is not configured. Set DASHSCOPE_API_KEY and QWEN_BASE_URL before generating.";
+  }
+
+  if (error instanceof QwenApiError) {
+    return `Qwen request failed with status ${error.status}. Check the API key, base URL, model, or provider status.`;
+  }
+
+  if (error instanceof QwenResponseError) {
+    return "Qwen returned an invalid response. Try again, or adjust the prompt/schema if this keeps happening.";
+  }
+
+  if (error instanceof ZodError) {
+    return "Qwen returned a show plan that does not match the required schema.";
+  }
+
+  return "Unable to generate a show plan with Qwen. Try again later.";
 }
 
 function parseToolArguments(rawArguments: string): Record<string, unknown> {

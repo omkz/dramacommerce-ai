@@ -6,6 +6,7 @@ export type VideoCreateJobData = {
   prompt: string;
   voiceOver: string;
   productImageUrl?: string;
+  useProductReference?: boolean;
 };
 
 export type VideoPollJobData = {

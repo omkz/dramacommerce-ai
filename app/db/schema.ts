@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -8,12 +9,18 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
-import type { ShowPlan } from "~/types/showrunner";
+import type { ProductBrief, ShowPlan } from "~/types/showrunner";
+import { SHOWRUNNER_JOB_STATUSES } from "~/types/showrunner-status";
 import { VIDEO_GENERATION_STATUSES } from "~/types/video-status";
 
 export const videoGenerationStatusEnum = pgEnum(
   "video_generation_status",
   VIDEO_GENERATION_STATUSES,
+);
+
+export const showrunnerJobStatusEnum = pgEnum(
+  "showrunner_job_status",
+  SHOWRUNNER_JOB_STATUSES,
 );
 
 // Auth.js's DrizzleAdapter creates users without passing an id, so the
@@ -98,6 +105,7 @@ export const videoJobs = pgTable(
     status: videoGenerationStatusEnum("status").notNull(),
     prompt: text("prompt").notNull(),
     voiceOver: text("voice_over"),
+    useProductReference: boolean("use_product_reference").notNull().default(false),
     attempts: integer("attempts").notNull().default(0),
     videoUrl: text("video_url"),
     errorMessage: text("error_message"),
@@ -111,6 +119,25 @@ export const videoJobs = pgTable(
     index("video_jobs_status_idx").on(table.status),
     index("video_jobs_next_poll_at_idx").on(table.nextPollAt),
   ],
+);
+
+export const showrunnerJobs = pgTable(
+  "showrunner_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    briefJson: jsonb("brief_json").$type<ProductBrief>().notNull(),
+    status: showrunnerJobStatusEnum("status").notNull(),
+    errorMessage: text("error_message"),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("showrunner_jobs_user_id_idx").on(table.userId)],
 );
 
 export const finalVideos = pgTable("final_videos", {

@@ -1,7 +1,11 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { finalVideos, projects, videoJobs } from "~/db/schema";
+import { finalVideos, projects, showrunnerJobs, videoJobs } from "~/db/schema";
 import { db } from "~/services/db.server";
-import type { ShowPlan } from "~/types/showrunner";
+import type { ProductBrief, ShowPlan } from "~/types/showrunner";
+import {
+  parseShowrunnerJobStatus,
+  type ShowrunnerJobStatus,
+} from "~/types/showrunner-status";
 import {
   parseVideoGenerationStatus,
   type VideoGenerationStatus,
@@ -15,6 +19,7 @@ export type VideoGenerationJob = {
   status: VideoGenerationStatus;
   prompt: string;
   voiceOver?: string;
+  useProductReference?: boolean;
   attempts: number;
   videoUrl?: string;
   errorMessage?: string;
@@ -40,6 +45,78 @@ export type SavedProject = {
   videoJobs?: VideoGenerationJob[];
   finalVideo?: FinalVideo;
 };
+
+export type ShowrunnerJob = {
+  id: string;
+  userId: string;
+  brief: ProductBrief;
+  status: ShowrunnerJobStatus;
+  errorMessage?: string;
+  projectId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function createShowrunnerJob(
+  id: string,
+  userId: string,
+  brief: ProductBrief,
+): Promise<ShowrunnerJob> {
+  const now = new Date();
+
+  await db.insert(showrunnerJobs).values({
+    id,
+    userId,
+    briefJson: brief,
+    status: "QUEUED",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return {
+    id,
+    userId,
+    brief,
+    status: "QUEUED",
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+}
+
+export async function getShowrunnerJob(
+  id: string,
+  userId: string,
+): Promise<ShowrunnerJob | null> {
+  const rows = await db
+    .select()
+    .from(showrunnerJobs)
+    .where(and(eq(showrunnerJobs.id, id), eq(showrunnerJobs.userId, userId)));
+
+  return rows[0] ? rowToShowrunnerJob(rows[0]) : null;
+}
+
+export async function updateShowrunnerJob(
+  id: string,
+  update: Partial<Pick<ShowrunnerJob, "status" | "errorMessage" | "projectId">>,
+): Promise<void> {
+  await db
+    .update(showrunnerJobs)
+    .set({ ...update, updatedAt: new Date() })
+    .where(eq(showrunnerJobs.id, id));
+}
+
+function rowToShowrunnerJob(row: typeof showrunnerJobs.$inferSelect): ShowrunnerJob {
+  return {
+    id: row.id,
+    userId: row.userId,
+    brief: row.briefJson,
+    status: parseShowrunnerJobStatus(row.status),
+    errorMessage: row.errorMessage ?? undefined,
+    projectId: row.projectId ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
 
 export async function saveProject(
   showPlan: ShowPlan,
@@ -147,6 +224,7 @@ export async function saveVideoJob(
       status: job.status,
       prompt: job.prompt,
       voiceOver: job.voiceOver,
+      useProductReference: job.useProductReference ?? false,
       attempts: job.attempts,
       videoUrl: job.videoUrl,
       errorMessage: job.errorMessage,
@@ -164,6 +242,7 @@ export async function saveVideoJob(
         status: job.status,
         prompt: job.prompt,
         voiceOver: job.voiceOver,
+        useProductReference: job.useProductReference ?? false,
         attempts: job.attempts,
         videoUrl: job.videoUrl,
         errorMessage: job.errorMessage,
@@ -255,6 +334,7 @@ function rowToVideoJob(row: typeof videoJobs.$inferSelect): VideoGenerationJob {
     status: parseVideoGenerationStatus(row.status),
     prompt: row.prompt,
     voiceOver: row.voiceOver ?? undefined,
+    useProductReference: row.useProductReference,
     attempts: row.attempts,
     videoUrl: row.videoUrl ?? undefined,
     errorMessage: row.errorMessage ?? undefined,

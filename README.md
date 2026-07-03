@@ -2,6 +2,8 @@
 
 DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app analyzes the photo, generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene narrated video clip using Qwen/Wan/DashScope TTS on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
 
+The multimodal orchestration path is: image → product analysis → script → storyboard → video prompts → Wan video clips → TTS voice-over → ffmpeg final edit.
+
 ## Features
 
 - Product brief form with image upload
@@ -58,7 +60,7 @@ pnpm run worker:video
 
 The video worker shells out to `ffmpeg` to stitch the 5 scene clips into a final video, so it must be installed locally (e.g. `apt-get install ffmpeg`, `brew install ffmpeg`) — the Docker image already includes it.
 
-> **Without these running, both "Generate Product Ad" and "Generate Video" clicks stay stuck forever.**
+> **Without these running, both "Generate Product Ad" and "Generate 5 Scene Videos" clicks stay stuck forever.**
 > The web app only enqueues Redis/BullMQ jobs; separate `worker:showrunner`
 > and `worker:video` processes are what actually call Qwen/Wan and update
 > job status. This is three processes by design (see
@@ -109,7 +111,7 @@ pnpm run start
 ```
 
 - `pnpm dev` starts the React Router dev server.
-- `pnpm run worker:showrunner` runs the Story/Director/Prompt/Editor agent pipeline as a background job (via `tsx`, importing the app's own agent code directly rather than duplicating it).
+- `pnpm run worker:showrunner` runs the Analyze/Story/Director/Prompt/Critic/Editor agent pipeline as a background job (via `tsx`, importing the app's own agent code directly rather than duplicating it).
 - `pnpm run worker:video` processes Redis/BullMQ Wan video jobs.
 - `pnpm run db:migrate` applies Drizzle migrations to Postgres.
 - `pnpm run db:generate` generates a new Drizzle migration after schema changes.

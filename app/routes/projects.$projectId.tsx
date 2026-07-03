@@ -664,129 +664,145 @@ export default function ProjectDetail() {
                           {videoJob ? <StatusTag status={videoJob.status} /> : null}
                         </div>
 
-                        <h3 className="mt-3 font-display text-xl font-medium text-bone">
-                          {scene.title}
-                        </h3>
+                        <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+                          <div className="space-y-3">
+                            {videoJob?.videoUrl ? (
+                              <>
+                                <div className="rounded-lg border border-paper/10 bg-panel p-3">
+                                  <div className={videoFrameClassName}>
+                                    <video
+                                      src={videoJob.videoUrl}
+                                      controls
+                                      className="h-full w-full rounded-md bg-black object-contain"
+                                    />
+                                  </div>
+                                </div>
 
-                        <p className="mt-3 text-sm leading-6 text-ash">
-                          {scene.visual}
-                        </p>
-
-                        {videoJob?.videoUrl ? (
-                          <>
-                            <div className="mt-4 rounded-lg border border-paper/10 bg-panel p-3">
-                              <div className={videoFrameClassName}>
-                                <video
-                                  src={videoJob.videoUrl}
-                                  controls
-                                  className="h-full w-full rounded-md bg-black object-contain"
-                                />
+                                <a
+                                  href={videoJob.videoUrl}
+                                  download={`${slugify(result.brief.productName)}-scene-${scene.scene}.mp4`}
+                                  className="inline-block text-xs font-semibold text-ash underline decoration-paper/20 underline-offset-4 hover:text-bone"
+                                >
+                                  Download Scene {scene.scene}
+                                </a>
+                              </>
+                            ) : (
+                              <div className="rounded-lg border border-dashed border-paper/15 bg-panel p-4">
+                                <div className={videoFrameClassName}>
+                                  <div className="flex h-full w-full items-center justify-center rounded-md border border-paper/10 bg-ink p-4 text-center">
+                                    <p className="font-mono text-[11px] uppercase tracking-widest text-ash">
+                                      {videoJob ? videoJob.status : "Not rendered"}
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
+                            )}
 
-                            <a
-                              href={videoJob.videoUrl}
-                              download={`${slugify(result.brief.productName)}-scene-${scene.scene}.mp4`}
-                              className="mt-3 inline-block text-xs font-semibold text-ash underline decoration-paper/20 underline-offset-4 hover:text-bone"
-                            >
-                              Download Scene {scene.scene}
-                            </a>
-                          </>
-                        ) : null}
+                            {videoJob ? (
+                              <div className="rounded-sm border border-paper/10 bg-panel p-3 font-mono text-xs text-ash">
+                                <p>
+                                  Last updated: {new Date(videoJob.updatedAt).toLocaleString()}
+                                </p>
 
-                        {videoJob ? (
-                          <div className="mt-3 rounded-sm border border-paper/10 bg-panel p-3 font-mono text-xs text-ash">
-                            <p>
-                              Last updated: {new Date(videoJob.updatedAt).toLocaleString()}
-                            </p>
+                                <p className="mt-1">Poll attempts: {videoJob.attempts}</p>
 
-                            <p className="mt-1">Poll attempts: {videoJob.attempts}</p>
+                                {isInFlightJobStatus(videoJob.status) ? (
+                                  <p className="mt-1">
+                                    Status checks run automatically while this scene is in progress.
+                                  </p>
+                                ) : null}
 
-                            {isInFlightJobStatus(videoJob.status) ? (
-                              <p className="mt-1">
-                                Status checks run automatically while this scene is in progress.
-                              </p>
-                            ) : null}
-
-                            {videoJob.errorMessage ? (
-                              <p className="mt-1 text-flame">{videoJob.errorMessage}</p>
+                                {videoJob.errorMessage ? (
+                                  <p className="mt-1 text-flame">{videoJob.errorMessage}</p>
+                                ) : null}
+                              </div>
                             ) : null}
                           </div>
-                        ) : null}
 
-                        {canRegenerate ? (
-                          <Form method="post" className="mt-4">
-                            <input type="hidden" name="intent" value="create-video-task" />
-                            <input type="hidden" name="scene" value={scene.scene} />
-                            <div className="flex items-baseline justify-between">
-                              <label
-                                htmlFor={`voiceOver-${scene.scene}`}
-                                className="block font-mono text-[11px] uppercase tracking-widest text-ash"
-                              >
-                                Voice-over
-                              </label>
-                              <span className="font-mono text-[11px] text-ash">
-                                Max {project.maxVoiceOverChars} chars — longer lines get cut off
-                              </span>
-                            </div>
-                            <textarea
-                              id={`voiceOver-${scene.scene}`}
-                              name="voiceOver"
-                              defaultValue={currentVoiceOver}
-                              maxLength={project.maxVoiceOverChars}
-                              rows={3}
-                              className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
-                            />
+                          <div className="min-w-0">
+                            <h3 className="font-display text-xl font-medium text-bone">
+                              {scene.title}
+                            </h3>
 
-                            <label
-                              htmlFor={`prompt-${scene.scene}`}
-                              className="mt-4 block font-mono text-[11px] uppercase tracking-widest text-ash"
-                            >
-                              Video Prompt
-                            </label>
-                            <textarea
-                              id={`prompt-${scene.scene}`}
-                              name="prompt"
-                              defaultValue={currentPrompt}
-                              rows={6}
-                              className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/80 outline-none focus:border-gold/50"
-                            />
-                            <button
-                              type="submit"
-                              disabled={isCreatingVideo}
-                              className="mt-3 rounded bg-flame px-4 py-2 text-sm font-semibold text-bone transition hover:bg-flame/90"
-                            >
-                              {isCreatingVideo
-                                ? "Queuing scene video..."
-                                : videoJob
-                                  ? "Regenerate Scene Video"
-                                  : "Generate Scene Video"}
-                            </button>
-                          </Form>
-                        ) : (
-                          <>
-                            <p className="mt-3 rounded-sm border border-paper/10 bg-panel p-3 text-sm text-bone/80">
-                              <span className="font-semibold text-bone">Voice-over:</span>{" "}
-                              {currentVoiceOver}
+                            <p className="mt-3 text-sm leading-6 text-ash">
+                              {scene.visual}
                             </p>
 
-                            <p className="mt-3 rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/70">
-                              {currentPrompt}
-                            </p>
+                            {canRegenerate ? (
+                              <Form method="post" className="mt-4">
+                                <input type="hidden" name="intent" value="create-video-task" />
+                                <input type="hidden" name="scene" value={scene.scene} />
+                                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                  <label
+                                    htmlFor={`voiceOver-${scene.scene}`}
+                                    className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                                  >
+                                    Voice-over
+                                  </label>
+                                  <span className="font-mono text-[11px] text-ash">
+                                    Max {project.maxVoiceOverChars} chars
+                                  </span>
+                                </div>
+                                <textarea
+                                  id={`voiceOver-${scene.scene}`}
+                                  name="voiceOver"
+                                  defaultValue={currentVoiceOver}
+                                  maxLength={project.maxVoiceOverChars}
+                                  rows={3}
+                                  className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                                />
 
-                            <Form method="post" className="mt-3">
-                              <input type="hidden" name="intent" value="refresh-video-task" />
-                              <input type="hidden" name="scene" value={scene.scene} />
-                              <button
-                                type="submit"
-                                disabled={isRefreshingVideo}
-                                className="rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
-                              >
-                                {isRefreshingVideo ? "Checking Wan status..." : "Check Wan Status"}
-                              </button>
-                            </Form>
-                          </>
-                        )}
+                                <label
+                                  htmlFor={`prompt-${scene.scene}`}
+                                  className="mt-4 block font-mono text-[11px] uppercase tracking-widest text-ash"
+                                >
+                                  Video Prompt
+                                </label>
+                                <textarea
+                                  id={`prompt-${scene.scene}`}
+                                  name="prompt"
+                                  defaultValue={currentPrompt}
+                                  rows={6}
+                                  className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/80 outline-none focus:border-gold/50"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={isCreatingVideo}
+                                  className="mt-3 rounded bg-flame px-4 py-2 text-sm font-semibold text-bone transition hover:bg-flame/90"
+                                >
+                                  {isCreatingVideo
+                                    ? "Queuing scene video..."
+                                    : videoJob
+                                      ? "Regenerate Scene Video"
+                                      : "Generate Scene Video"}
+                                </button>
+                              </Form>
+                            ) : (
+                              <>
+                                <p className="mt-3 rounded-sm border border-paper/10 bg-panel p-3 text-sm text-bone/80">
+                                  <span className="font-semibold text-bone">Voice-over:</span>{" "}
+                                  {currentVoiceOver}
+                                </p>
+
+                                <p className="mt-3 rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/70">
+                                  {currentPrompt}
+                                </p>
+
+                                <Form method="post" className="mt-3">
+                                  <input type="hidden" name="intent" value="refresh-video-task" />
+                                  <input type="hidden" name="scene" value={scene.scene} />
+                                  <button
+                                    type="submit"
+                                    disabled={isRefreshingVideo}
+                                    className="rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                                  >
+                                    {isRefreshingVideo ? "Checking Wan status..." : "Check Wan Status"}
+                                  </button>
+                                </Form>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="sprockets sprockets-panel" aria-hidden />

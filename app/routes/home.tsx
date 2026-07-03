@@ -1,3 +1,17 @@
+import { redirect } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
+import { getAuthSession } from "~/services/auth.server";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const session = await getAuthSession(request);
+
+  if (session?.user) {
+    throw redirect("/dashboard");
+  }
+
+  return null;
+}
+
 export function meta() {
   return [
     { title: "DramaCommerce AI" },

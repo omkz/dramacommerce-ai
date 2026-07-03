@@ -67,9 +67,21 @@ export default function AppLayout() {
           </div>
 
           <nav className="flex gap-2 overflow-x-auto border-t border-paper/10 px-5 py-3">
-            <MobileNavLink to="/dashboard" label="Dashboard" />
-            <MobileNavLink to="/generate" label="Create Ad" />
-            <MobileNavLink to="/projects" label="Projects" />
+            <MobileNavLink
+              to="/dashboard"
+              label="Dashboard"
+              active={isActivePath(location.pathname, "/dashboard")}
+            />
+            <MobileNavLink
+              to="/generate"
+              label="Create Ad"
+              active={isActivePath(location.pathname, "/generate")}
+            />
+            <MobileNavLink
+              to="/projects"
+              label="Projects"
+              active={isActivePath(location.pathname, "/projects")}
+            />
           </nav>
         </header>
 
@@ -135,11 +147,23 @@ function SidebarLink({
   );
 }
 
-function MobileNavLink({ to, label }: { to: string; label: string }) {
+function MobileNavLink({
+  to,
+  label,
+  active,
+}: {
+  to: string;
+  label: string;
+  active: boolean;
+}) {
   return (
     <Link
       to={to}
-      className="shrink-0 rounded border border-paper/15 px-3 py-1.5 text-sm font-semibold text-bone"
+      className={
+        active
+          ? "shrink-0 rounded border border-gold/40 bg-gold/10 px-3 py-1.5 text-sm font-semibold text-gold"
+          : "shrink-0 rounded border border-paper/15 px-3 py-1.5 text-sm font-semibold text-bone"
+      }
     >
       {label}
     </Link>

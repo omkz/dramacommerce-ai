@@ -533,6 +533,23 @@ async function readLocalImageAsDataUrl(url) {
   return `data:${mime};base64,${buffer.toString("base64")}`;
 }
 
+// wan2.1 (this app's default t2v/i2v models) predates Wan's newer
+// resolution+ratio protocol, which only wan2.6/2.7 understand — wan2.1
+// silently ignores an unrecognized `ratio` field and falls back to
+// landscape 1280*720, regardless of WAN_VIDEO_RATIO. The legacy protocol
+// wan2.1 actually speaks is a single `size: "width*height"` field.
+const WAN_LEGACY_T2V_SIZES = {
+  "720P": { "9:16": "720*1280", "16:9": "1280*720", "1:1": "720*720" },
+  "1080P": { "9:16": "1080*1920", "16:9": "1920*1080", "1:1": "1080*1080" },
+};
+
+function getWanLegacyT2vSize() {
+  const resolution = process.env.WAN_VIDEO_RESOLUTION || "720P";
+  const ratio = process.env.WAN_VIDEO_RATIO || "9:16";
+
+  return WAN_LEGACY_T2V_SIZES[resolution]?.[ratio] || "720*1280";
+}
+
 async function createWanTextToVideoTask(prompt, imgDataUrl) {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.DASHSCOPE_VIDEO_BASE_URL;
@@ -545,17 +562,17 @@ async function createWanTextToVideoTask(prompt, imgDataUrl) {
   }
 
   const parameters = {
-    resolution: process.env.WAN_VIDEO_RESOLUTION || "720P",
     duration: Number(process.env.WAN_VIDEO_DURATION || "5"),
     prompt_extend: true,
     watermark: true,
   };
 
-  // Wan i2v derives aspect ratio from the reference image itself — `ratio`
-  // is t2v-only (nothing to derive it from without an image), so it's
-  // omitted here rather than risk the API rejecting an unexpected param.
-  if (!imgDataUrl) {
-    parameters.ratio = process.env.WAN_VIDEO_RATIO || "9:16";
+  // i2v still speaks the resolution-based protocol (confirmed working);
+  // t2v needs the legacy `size` field — see WAN_LEGACY_T2V_SIZES above.
+  if (imgDataUrl) {
+    parameters.resolution = process.env.WAN_VIDEO_RESOLUTION || "720P";
+  } else {
+    parameters.size = getWanLegacyT2vSize();
   }
 
   const response = await fetch(

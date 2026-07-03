@@ -9,6 +9,7 @@ The multimodal orchestration path is: image → product analysis → script → 
 - Product brief form with image upload
 - Qwen-powered multi-agent showrunner pipeline, run as a background job with a live-updating Agent Timeline UI (Analyze → Story → Director → Prompt → Critic → Editor → Render → Stitch)
 - Vision-based Analyze Agent grounds the story in what the photo actually shows (category, colors, material, quality) instead of guessing from text alone
+- Custom internal skill layer augments the Qwen agents with commerce angle selection, brand voice guidance, prompt safety checks, and video-readiness validation
 - Critic Agent reviews the storyboard before render and can trigger one bounded revision pass
 - Director Agent decides, per scene, whether Wan should animate directly from the real product photo (image-to-video) instead of text alone — only for scenes where that's visually coherent
 - Structured 5-scene storyboard and editing timeline
@@ -140,6 +141,8 @@ React Router full-stack app
 ```
 
 The showrunner flow is split into six Qwen-powered stages: Analyze Agent (vision), Story Agent, Director Agent, Prompt Agent, Critic Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects. `/generate`'s action no longer runs these stages inline — it creates a `showrunner_jobs` row and enqueues a job; `worker:showrunner` runs `generateShowPlan` stage by stage, writing status back after each stage so `/generate/:jobId` can show live progress. On success it saves the project and the job redirects there; on failure (retries exhausted) it records the error and cleans up the uploaded image, same as the old synchronous failure path.
+
+DramaCommerce AI also uses a custom internal skill layer to augment the Qwen-powered showrunner agents with commerce reasoning, product image analysis, brand voice adaptation, prompt safety checks, and video-readiness validation. These skills live under `app/services/skills/` and provide deterministic context or warnings before the agents write final creative output.
 
 The Analyze Agent looks at the actual product photo and returns category/colors/material/branding/quality, which grounds the Story and Director agents instead of them guessing from the text brief alone. The Director Agent uses that analysis to decide, per scene, whether the real photo is a good fit as Wan's literal first frame (`useProductReference`) — normally only the final hero/reveal scene, since forcing a static photo onto an unrelated action shot produces broken video. The Critic Agent reviews the finished storyboard, including sanity-checking those reference-image choices, and can trigger exactly one revision pass before the plan is saved.
 

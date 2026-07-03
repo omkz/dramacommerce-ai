@@ -4,6 +4,11 @@ import { runDirectorAgent } from "~/agents/director-agent.server";
 import { runEditorAgent } from "~/agents/editor-agent.server";
 import { runPromptAgent } from "~/agents/prompt-agent.server";
 import { runStoryAgent } from "~/agents/story-agent.server";
+import { evaluatePromptSafetySkill } from "~/services/skills/prompt-safety-skill.server";
+import {
+    evaluateVideoReadinessSkill,
+    normalizeReferenceSceneUsage,
+} from "~/services/skills/video-readiness-skill.server";
 import type { ShowrunnerJobStatus } from "~/types/showrunner-status";
 import type { ProductBrief, ShowPlan } from "~/types/showrunner";
 
@@ -18,16 +23,24 @@ export async function generateShowPlan(
     const story = await runStoryAgent(brief, analysis);
 
     await onStageChange?.("DIRECTING");
-    const directedScenes = await runDirectorAgent(brief, story, analysis);
+    const directedScenes = normalizeReferenceSceneUsage(
+        await runDirectorAgent(brief, story, analysis),
+        analysis,
+    );
 
     await onStageChange?.("PROMPTING");
     let storyboard = await runPromptAgent(brief, directedScenes);
 
     await onStageChange?.("CRITIQUING");
-    const critique = await runCriticAgent(brief, storyboard);
+    const critique = await runCriticAgent(brief, storyboard, analysis);
+    const skillRevisionNotes = getSkillRevisionNotes(storyboard, analysis);
 
-    if (!critique.approved) {
-        storyboard = await runPromptAgent(brief, directedScenes, critique.notes);
+    if (!critique.approved || skillRevisionNotes) {
+        storyboard = await runPromptAgent(
+            brief,
+            directedScenes,
+            [critique.notes, skillRevisionNotes].filter(Boolean).join("\n"),
+        );
     }
 
     await onStageChange?.("EDITING");
@@ -45,4 +58,19 @@ export async function generateShowPlan(
         caption: editorPackage.caption,
         cta: editorPackage.cta,
     };
+}
+
+function getSkillRevisionNotes(
+    storyboard: Awaited<ReturnType<typeof runPromptAgent>>,
+    analysis: Awaited<ReturnType<typeof runAnalyzeAgent>>,
+): string | undefined {
+    const checks = [
+        evaluatePromptSafetySkill(storyboard, analysis),
+        evaluateVideoReadinessSkill(storyboard, analysis),
+    ];
+    const warnings = checks.flatMap((check) => check.warnings);
+
+    return warnings.length > 0
+        ? `Custom skill warnings to fix before render:\n${warnings.join("\n")}`
+        : undefined;
 }

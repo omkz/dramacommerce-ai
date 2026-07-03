@@ -43,6 +43,18 @@ The showrunner has six Qwen-powered stages:
 
 `/generate` creates a `showrunner_jobs` row and enqueues the job. `worker:showrunner` calls `generateShowPlan()` with `onStageChange`, so every stage transition is persisted and `/generate/:jobId` can render live progress. The project is saved only after all six stages succeed.
 
+## Custom Skills
+
+The showrunner agents are augmented by deterministic internal skills in `app/services/skills/`:
+
+- Product Analysis Skill summarizes photo facts, reference suitability, and visual warnings.
+- Commerce Angle Skill turns the merchant brief into pain point, desire, objection, and CTA guidance.
+- Brand Voice Skill adapts tone to the requested mood and platform.
+- Prompt Safety Skill checks Wan prompts for unsupported claims and risky reference-image usage.
+- Video Readiness Skill checks scene count, reference-image usage, prompt availability, and short-clip voice-over fit.
+
+These skills do not replace Qwen. They provide structured facts, recommendations, and warnings that Qwen agents must account for, giving the pipeline deterministic commerce and render-readiness checks before creative output is accepted. The video-readiness layer also enforces the product-reference rule by allowing at most one reference-image scene, and none when the image analysis says the photo is not usable.
+
 ## Product Reference Decision
 
 The Analyze Agent returns `canUseAsReference`. The Director Agent uses that value plus scene intent to set `useProductReference` per scene. The project page exposes both decisions:

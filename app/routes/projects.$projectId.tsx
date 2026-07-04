@@ -28,7 +28,7 @@ import {
   checkVideoCreateRateLimit,
   checkVideoStitchRateLimit,
 } from "~/services/rate-limit.server";
-import type { StoryboardScene } from "~/types/showrunner";
+import type { AgentTokenUsage, StoryboardScene } from "~/types/showrunner";
 import { AgentTimeline, type TimelineStageState } from "~/components/agent-timeline";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -448,6 +448,13 @@ function buildRenderStitchStates(
   return { render, stitch };
 }
 
+function sumTokenUsage(
+  entries: AgentTokenUsage[],
+  field: "promptTokens" | "completionTokens" | "totalTokens",
+): number {
+  return entries.reduce((total, entry) => total + entry[field], 0);
+}
+
 function slugify(value: string): string {
   const slug = value
     .toLowerCase()
@@ -606,6 +613,61 @@ export default function ProjectDetail() {
               }}
             />
           </ResultCard>
+
+          {result.tokenUsage && result.tokenUsage.length > 0 ? (
+            <ResultCard title="Token Usage" eyebrow="Cost">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-paper/10 text-ash">
+                      <th className="py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-widest">
+                        Stage
+                      </th>
+                      <th className="py-2 pr-4 font-mono text-[10px] font-normal uppercase tracking-widest">
+                        Model
+                      </th>
+                      <th className="py-2 pr-4 text-right font-mono text-[10px] font-normal uppercase tracking-widest">
+                        Prompt
+                      </th>
+                      <th className="py-2 pr-4 text-right font-mono text-[10px] font-normal uppercase tracking-widest">
+                        Completion
+                      </th>
+                      <th className="py-2 text-right font-mono text-[10px] font-normal uppercase tracking-widest">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="[font-variant-numeric:tabular-nums]">
+                    {result.tokenUsage.map((entry, index) => (
+                      <tr key={`${entry.stage}-${index}`} className="border-b border-paper/5">
+                        <td className="py-2 pr-4 capitalize text-bone">{entry.stage}</td>
+                        <td className="py-2 pr-4 font-mono text-xs text-ash">{entry.model}</td>
+                        <td className="py-2 pr-4 text-right text-ash">{entry.promptTokens.toLocaleString()}</td>
+                        <td className="py-2 pr-4 text-right text-ash">{entry.completionTokens.toLocaleString()}</td>
+                        <td className="py-2 text-right font-semibold text-bone">{entry.totalTokens.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="[font-variant-numeric:tabular-nums]">
+                      <td className="pt-3 pr-4 font-semibold text-bone" colSpan={2}>
+                        Total
+                      </td>
+                      <td className="pt-3 pr-4 text-right font-semibold text-gold">
+                        {sumTokenUsage(result.tokenUsage, "promptTokens").toLocaleString()}
+                      </td>
+                      <td className="pt-3 pr-4 text-right font-semibold text-gold">
+                        {sumTokenUsage(result.tokenUsage, "completionTokens").toLocaleString()}
+                      </td>
+                      <td className="pt-3 text-right font-semibold text-gold">
+                        {sumTokenUsage(result.tokenUsage, "totalTokens").toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </ResultCard>
+          ) : null}
         </div>
 
         <section className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">

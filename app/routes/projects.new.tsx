@@ -482,8 +482,8 @@ export default function Generate() {
                       <option value="16:9">16:9 — YouTube</option>
                     </select>
                     <p className="mt-2 text-xs leading-5 text-ink/50">
-                      Portrait uses 720x1280 by default, or 1080x1920 when
-                      WAN_VIDEO_RESOLUTION is set to 1080P.
+                      Portrait renders at 720x1280 by default, or 1080x1920
+                      on accounts configured for 1080p output.
                     </p>
                   </div>
 

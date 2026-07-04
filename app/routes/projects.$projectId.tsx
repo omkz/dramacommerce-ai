@@ -1213,7 +1213,7 @@ function SmallItem({ label, value }: { label: string; value: string }) {
       <p className="font-mono text-[11px] uppercase tracking-widest text-ash">
         {label}
       </p>
-      <p className="mt-1 text-sm font-medium text-bone">{value}</p>
+      <p className="mt-1 break-words text-sm font-medium text-bone">{value}</p>
     </div>
   );
 }

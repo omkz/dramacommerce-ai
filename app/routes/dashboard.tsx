@@ -347,7 +347,7 @@ function EmptyState({
 function StatusPill({ label }: { label: string }) {
   const isAlert = label === "Failed";
   const isActive = label === "Rendering";
-  const isReady = label === "Ready";
+  const isReady = label === "Completed";
 
   return (
     <span
@@ -369,7 +369,7 @@ function StatusPill({ label }: { label: string }) {
 function getProjectHealth(project: SavedProject): string {
   if (hasFailedVideo(project)) return "Failed";
   if (hasInFlightVideo(project)) return "Rendering";
-  if (project.finalVideo?.status === "SUCCEEDED") return "Ready";
+  if (project.finalVideo?.status === "SUCCEEDED") return "Completed";
   return "Draft";
 }
 

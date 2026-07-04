@@ -1,6 +1,10 @@
 import { Link, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { listProjects } from "~/services/project-store.server";
+import {
+  listProjects,
+  type SavedProject,
+  type VideoGenerationJob,
+} from "~/services/project-store.server";
 import { requireUser } from "~/services/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -97,16 +101,19 @@ export default function ProjectsIndex() {
                   )}
 
                   <div className="p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <span
-                        className={
-                          showPlan.source === "qwen"
-                            ? "rounded-full border border-gold/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
-                            : "rounded-full border border-ash/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ash"
-                        }
-                      >
-                        {showPlan.source === "qwen" ? "Qwen" : "Mock"}
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill label={getProjectHealth(project)} />
+                        <span
+                          className={
+                            showPlan.source === "qwen"
+                              ? "rounded-full border border-gold/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
+                              : "rounded-full border border-ash/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-ash"
+                          }
+                        >
+                          {showPlan.source === "qwen" ? "Qwen" : "Mock"}
+                        </span>
+                      </div>
 
                       <span className="font-mono text-xs text-ash">
                         {new Date(project.createdAt).toLocaleDateString()}
@@ -159,4 +166,61 @@ export default function ProjectsIndex() {
       </div>
     </main>
   );
+}
+
+function StatusPill({ label }: { label: string }) {
+  const isAlert = label === "Failed";
+  const isActive = label === "Rendering";
+  const isReady = label === "Completed";
+
+  return (
+    <span
+      className={
+        isAlert
+          ? "rounded-full border border-flame/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-flame"
+          : isActive
+            ? "rounded-full border border-gold/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
+            : isReady
+              ? "rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
+              : "rounded-full border border-paper/20 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-ash"
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
+function getProjectHealth(project: SavedProject): string {
+  if (hasFailedVideo(project)) return "Failed";
+  if (hasInFlightVideo(project)) return "Rendering";
+  if (project.finalVideo?.status === "SUCCEEDED") return "Completed";
+  return "Draft";
+}
+
+function hasFailedVideo(project: SavedProject): boolean {
+  return (
+    project.videoJobs?.some(isFailedVideoJob) ||
+    project.finalVideo?.status === "FAILED" ||
+    project.finalVideo?.status === "CANCELED" ||
+    false
+  );
+}
+
+function hasInFlightVideo(project: SavedProject): boolean {
+  return (
+    project.videoJobs?.some(isInFlightVideoJob) ||
+    (project.finalVideo ? isInFlightStatus(project.finalVideo.status) : false)
+  );
+}
+
+function isInFlightVideoJob(job: VideoGenerationJob): boolean {
+  return isInFlightStatus(job.status);
+}
+
+function isFailedVideoJob(job: VideoGenerationJob): boolean {
+  return job.status === "FAILED" || job.status === "CANCELED";
+}
+
+function isInFlightStatus(status: string): boolean {
+  return status === "QUEUED" || status === "PENDING" || status === "RUNNING";
 }

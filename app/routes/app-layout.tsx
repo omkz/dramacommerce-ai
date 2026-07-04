@@ -27,11 +27,6 @@ export default function AppLayout() {
               active={isActivePath(location.pathname, "/dashboard")}
             />
             <SidebarLink
-              to="/generate"
-              label="Create Ad"
-              active={isActivePath(location.pathname, "/generate")}
-            />
-            <SidebarLink
               to="/projects"
               label="Projects"
               active={isActivePath(location.pathname, "/projects")}
@@ -71,11 +66,6 @@ export default function AppLayout() {
               to="/dashboard"
               label="Dashboard"
               active={isActivePath(location.pathname, "/dashboard")}
-            />
-            <MobileNavLink
-              to="/generate"
-              label="Create Ad"
-              active={isActivePath(location.pathname, "/generate")}
             />
             <MobileNavLink
               to="/projects"

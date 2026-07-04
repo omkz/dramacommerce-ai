@@ -45,7 +45,7 @@ export async function generateShowPlan(
     }
 
     await onStageChange?.("EDITING");
-    const editorPackage = await runEditorAgent(brief, storyboard);
+    const editorPackage = await runEditorAgent(brief, storyboard, story.hook);
 
     return {
         source: "qwen",

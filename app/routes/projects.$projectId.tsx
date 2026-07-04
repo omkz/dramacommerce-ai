@@ -591,6 +591,23 @@ export default function ProjectDetail() {
           </p>
         ) : null}
 
+        <div className="mt-8">
+          <ResultCard title="Production Timeline" eyebrow="Credits">
+            <AgentTimeline
+              orientation="horizontal"
+              states={{
+                analyze: "done",
+                story: "done",
+                director: "done",
+                prompt: "done",
+                critic: "done",
+                editor: "done",
+                ...buildRenderStitchStates(project),
+              }}
+            />
+          </ResultCard>
+        </div>
+
         <section className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="min-w-0 space-y-5">
             {result.analysis ? (
@@ -1098,20 +1115,6 @@ export default function ProjectDetail() {
                   ) : null}
                 </div>
               </div>
-            </ResultCard>
-
-            <ResultCard title="Production Timeline" eyebrow="Credits">
-              <AgentTimeline
-                states={{
-                  analyze: "done",
-                  story: "done",
-                  director: "done",
-                  prompt: "done",
-                  critic: "done",
-                  editor: "done",
-                  ...buildRenderStitchStates(project),
-                }}
-              />
             </ResultCard>
 
             <ResultCard title="Project Info" eyebrow="Inputs">

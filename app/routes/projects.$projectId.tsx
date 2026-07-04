@@ -14,6 +14,7 @@ import {
   deleteProject,
   saveVideoJob,
   saveFinalVideo,
+  updateShowPlan,
   type SavedProject,
 } from "~/services/project-store.server";
 import { queryWanVideoTask } from "~/services/wan-video.server";
@@ -141,6 +142,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return redirect(`/projects/${projectId}`);
   }
 
+  if (intent === "edit-story") {
+    const concept = String(formData.get("concept") || "").trim();
+    const hook = String(formData.get("hook") || "").trim();
+    const voiceOver = String(formData.get("voiceOver") || "").trim();
+
+    if (!concept || !hook || !voiceOver) {
+      return { error: "Concept, hook, and voice-over can't be empty." };
+    }
+
+    await updateShowPlan(projectId, user.id, {
+      ...project.showPlan,
+      concept,
+      hook,
+      voiceOver,
+    });
+
+    return redirect(`/projects/${projectId}`);
+  }
+
   if (intent === "create-stitch-task") {
     const allScenesSucceeded =
       project.showPlan.storyboard.length > 0 &&
@@ -234,6 +254,52 @@ export async function action({ request, params }: ActionFunctionArgs) {
         scene: sceneNumber,
       };
     }
+  }
+
+  if (intent === "edit-scene") {
+    const promptEdit = String(formData.get("prompt") || "").trim();
+    const voiceOverEdit = String(formData.get("voiceOver") || "").trim();
+    const maxVoiceOverChars = getMaxVoiceOverChars();
+
+    if (!promptEdit || !voiceOverEdit) {
+      return {
+        error: "Prompt and voice-over can't be empty.",
+        scene: sceneNumber,
+      };
+    }
+
+    if (voiceOverEdit.length > maxVoiceOverChars) {
+      return {
+        error: `Voice-over is too long for a ${process.env.WAN_VIDEO_DURATION || "5"}s scene (max ~${maxVoiceOverChars} characters) — it will get cut off mid-sentence. Shorten it and try again.`,
+        scene: sceneNumber,
+      };
+    }
+
+    const currentJob = project.videoJobs?.find(
+      (job) => job.scene === scene.scene,
+    );
+
+    if (currentJob) {
+      await saveVideoJob(projectId, user.id, {
+        ...currentJob,
+        prompt: promptEdit,
+        voiceOver: voiceOverEdit,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      const updatedStoryboard = project.showPlan.storyboard.map((item) =>
+        item.scene === scene.scene
+          ? { ...item, videoPrompt: promptEdit, voiceOver: voiceOverEdit }
+          : item,
+      );
+
+      await updateShowPlan(projectId, user.id, {
+        ...project.showPlan,
+        storyboard: updatedStoryboard,
+      });
+    }
+
+    return redirect(`/projects/${projectId}`);
   }
 
   if (intent === "refresh-video-task") {
@@ -411,6 +477,7 @@ export default function ProjectDetail() {
   const pendingScene = navigation.formData?.get("scene");
   const isCreatingAllVideos = pendingIntent === "create-all-video-tasks";
   const isStitchingFinalVideo = pendingIntent === "create-stitch-task";
+  const isSavingStory = pendingIntent === "edit-story";
   const allScenesSucceeded =
     result.storyboard.length > 0 &&
     result.storyboard.every((scene) =>
@@ -433,7 +500,7 @@ export default function ProjectDetail() {
     ? isInFlightJobStatus(project.finalVideo.status)
     : false;
   const shouldAutoRefresh = hasInFlightSceneVideos || hasInFlightFinalVideo;
-  const videoFrameClassName = getVideoFrameClassName(result.brief.aspectRatio);
+  const [editingScene, setEditingScene] = useState<number | null>(null);
 
   useEffect(() => {
     if (!shouldAutoRefresh) {
@@ -458,10 +525,6 @@ export default function ProjectDetail() {
           </Link>
 
           <div className="flex flex-wrap items-center gap-4">
-            <p className="font-mono text-xs text-ash">
-              Shot on {new Date(project.createdAt).toLocaleString()}
-            </p>
-
             {shouldAutoRefresh ? (
               <p className="inline-flex items-center gap-2 rounded-full border border-paper/15 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-ash">
                 <span className="tally-dot h-1.5 w-1.5 rounded-full bg-flame" aria-hidden />
@@ -502,19 +565,16 @@ export default function ProjectDetail() {
             {result.brief.productName}
           </h1>
 
-          <p className="mt-4 max-w-2xl text-ash">
-            AI-generated product drama ad plan for {result.brief.platform}.
-          </p>
-
-          {result.brief.imageUrl ? (
-            <div className="mt-8 overflow-hidden rounded-lg border border-paper/10 bg-panel">
-              <img
-                src={result.brief.imageUrl}
-                alt={result.brief.productName}
-                className="max-h-[420px] w-full object-contain p-4"
-              />
-            </div>
-          ) : null}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <ProjectStatusPill label={getProjectStatusLabel(project)} />
+            <span className="font-mono text-xs text-ash">{result.brief.platform}</span>
+            <span className="text-ash">·</span>
+            <span className="font-mono text-xs text-ash">{result.brief.duration}</span>
+            <span className="text-ash">·</span>
+            <span className="font-mono text-xs text-ash">
+              Created {new Date(project.createdAt).toLocaleDateString()}
+            </span>
+          </div>
         </section>
 
         {actionData?.error ? (
@@ -526,316 +586,357 @@ export default function ProjectDetail() {
           </p>
         ) : null}
 
-        <section className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="min-w-0 space-y-5">
-            <ResultCard title="Final Product Drama Ad" eyebrow="Output" accent>
-              <div className="space-y-4">
-              <p className="text-sm leading-6 text-ash">
-                Once all 5 scene videos succeed, stitch them into one
-                downloadable ad ready for TikTok, Reels, or Shorts.
-              </p>
-
-              {isFinalVideoStale ? (
-                <p className="rounded-lg border border-gold/30 bg-gold/10 p-4 text-sm leading-6 text-gold">
-                  A scene was regenerated after this video was stitched — re-stitch
-                  to include the latest clips.
-                </p>
-              ) : null}
-
-              {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
-                <div className="rounded-lg border border-paper/10 bg-panel-raised p-4">
-                  <div className={videoFrameClassName}>
-                    <video
-                      src={project.finalVideo.videoUrl}
-                      controls
-                      className="h-full w-full rounded-md bg-black object-contain"
-                    />
-                  </div>
+            {result.analysis ? (
+              <ResultCard title="Product Analysis" eyebrow="Vision">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <SmallItem label="Category" value={result.analysis.category} />
+                  <SmallItem label="Colors" value={result.analysis.colors.join(", ")} />
+                  <SmallItem label="Material" value={result.analysis.material} />
+                  <SmallItem
+                    label="Branding"
+                    value={result.analysis.brandingVisible || "None visible"}
+                  />
+                  <SmallItem
+                    label="Photo Quality"
+                    value={
+                      result.analysis.quality.charAt(0).toUpperCase() +
+                      result.analysis.quality.slice(1)
+                    }
+                  />
+                  <SmallItem
+                    label="Product Reference"
+                    value={result.analysis.canUseAsReference ? "Usable" : "Not usable"}
+                  />
                 </div>
-              ) : null}
 
-              {project.finalVideo ? (
-                <div className="rounded-sm border border-paper/10 bg-panel-raised p-4">
-                  <p className="text-sm text-ash">
-                    Status:{" "}
-                    <StatusTag status={project.finalVideo.status} />
+                {result.analysis.issues.length > 0 ? (
+                  <p className="mt-4 text-sm leading-6 text-ash">
+                    <span className="font-semibold text-bone">Issues noted: </span>
+                    {result.analysis.issues.join(", ")}
                   </p>
-
-                  <p className="mt-2 font-mono text-xs text-ash">
-                    Last updated: {new Date(project.finalVideo.updatedAt).toLocaleString()}
-                  </p>
-
-                  {isInFlightJobStatus(project.finalVideo.status) ? (
-                    <p className="mt-2 text-sm text-ash">
-                      This page checks final video progress automatically.
-                    </p>
-                  ) : null}
-
-                  {project.finalVideo.errorMessage ? (
-                    <p className="mt-2 text-sm text-flame">
-                      {project.finalVideo.errorMessage}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap gap-3">
-                {allScenesSucceeded ? (
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="create-stitch-task" />
-                    <button
-                      type="submit"
-                      disabled={isStitchingFinalVideo}
-                      className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
-                    >
-                      {isStitchingFinalVideo
-                        ? "Queuing final ad..."
-                        : project.finalVideo
-                          ? "Re-stitch Final Ad"
-                          : "Stitch Final Ad"}
-                    </button>
-                  </Form>
-                ) : (
-                  <p className="text-sm text-ash">
-                    Generate successful videos for all 5 scenes below to unlock final stitching.
-                  </p>
-                )}
-
-                {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
-                  <a
-                    href={project.finalVideo.videoUrl}
-                    download={`${slugify(result.brief.productName)}-drama-ad.mp4`}
-                    className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
-                  >
-                    Download Final Ad
-                  </a>
                 ) : null}
-              </div>
+              </ResultCard>
+            ) : null}
+
+            <ResultCard title="Story & Voice-over" eyebrow="Editing">
+              <Form method="post" className="space-y-4">
+                <input type="hidden" name="intent" value="edit-story" />
+
+                <div>
+                  <label
+                    htmlFor="concept"
+                    className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                  >
+                    Concept
+                  </label>
+                  <textarea
+                    id="concept"
+                    name="concept"
+                    defaultValue={result.concept}
+                    rows={2}
+                    className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="hook"
+                    className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                  >
+                    Hook
+                  </label>
+                  <textarea
+                    id="hook"
+                    name="hook"
+                    defaultValue={result.hook}
+                    rows={2}
+                    className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="storyVoiceOver"
+                    className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                  >
+                    Voice-over
+                  </label>
+                  <textarea
+                    id="storyVoiceOver"
+                    name="voiceOver"
+                    defaultValue={result.voiceOver}
+                    rows={3}
+                    className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingStory}
+                  className="rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                >
+                  {isSavingStory ? "Saving..." : "Save Changes"}
+                </button>
+              </Form>
+            </ResultCard>
+
+            <ResultCard title="Storyboard" eyebrow="5 Scenes">
+              <div className="flex gap-3 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                {result.storyboard.map((scene) => (
+                  <div
+                    key={scene.scene}
+                    className="w-44 shrink-0 rounded-sm border border-paper/10 bg-panel-raised p-4 lg:w-auto lg:min-w-[180px] lg:flex-1"
+                  >
+                    <span className="rounded-full border border-gold/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                      Scene {String(scene.scene).padStart(2, "0")}
+                    </span>
+                    <h3 className="mt-3 font-display text-base font-medium text-bone">
+                      {scene.title}
+                    </h3>
+                    <p className="mt-1 font-mono text-[11px] text-ash">{scene.duration}</p>
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-ash">
+                      {scene.visual}
+                    </p>
+                  </div>
+                ))}
               </div>
             </ResultCard>
 
-            <ResultCard title="Storyboard" eyebrow="Reel">
-              <div className="space-y-6">
-              {actionData?.error ? (
-                <p
-                  role="alert"
-                  className="rounded-lg border border-flame/30 bg-flame/10 p-4 text-sm leading-6 text-flame"
-                >
-                  {actionData.error}
-                </p>
-              ) : null}
-
-              <Form method="post">
-                <input type="hidden" name="intent" value="create-all-video-tasks" />
-                <button
-                  type="submit"
-                  disabled={isCreatingAllVideos}
-                  className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
-                >
-                  {isCreatingAllVideos ? "Queuing scene videos..." : "Generate 5 Scene Videos"}
-                </button>
-              </Form>
-
-              <div className="space-y-6">
+            <ResultCard title="Scene Prompts & Voice-over" eyebrow="Script">
+              <div className="space-y-3">
                 {result.storyboard.map((scene) => {
                   const videoJob = project.videoJobs?.find(
                     (job) => job.scene === scene.scene,
                   );
-                  const isPendingForThisScene =
-                    pendingScene === String(scene.scene);
-                  const isCreatingVideo =
-                    isPendingForThisScene && pendingIntent === "create-video-task";
-                  const isRefreshingVideo =
-                    isPendingForThisScene && pendingIntent === "refresh-video-task";
-                  const canRegenerate = !videoJob || isTerminalJobStatus(videoJob.status);
                   const currentPrompt = videoJob?.prompt ?? scene.videoPrompt;
                   const currentVoiceOver = videoJob?.voiceOver ?? scene.voiceOver;
+                  const isEditingThisScene = editingScene === scene.scene;
+                  const isPendingForThisScene =
+                    pendingScene === String(scene.scene);
+                  const isSavingEdit =
+                    isPendingForThisScene && pendingIntent === "edit-scene";
                   const sceneActionError =
                     actionData?.scene === scene.scene ? actionData.error : undefined;
 
                   return (
                     <div
                       key={scene.scene}
-                      className="overflow-hidden rounded-lg border border-paper/10 bg-panel-raised"
+                      className="rounded-sm border border-paper/10 bg-panel-raised p-4"
                     >
-                      <div className="sprockets sprockets-panel" aria-hidden />
-
-                      <div className="p-5">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="rounded-full border border-gold/40 px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-gold">
-                            Scene {String(scene.scene).padStart(2, "0")}
-                          </span>
-                          <span className="font-mono text-xs text-ash">
-                            {scene.duration}
-                          </span>
-                          <span
-                            className={
-                              scene.useProductReference
-                                ? "rounded-full border border-gold/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
-                                : "rounded-full border border-paper/15 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-ash"
-                            }
-                          >
-                            Product reference:{" "}
-                            {scene.useProductReference ? "usable" : "not used"}
-                          </span>
-                          {videoJob ? <StatusTag status={videoJob.status} /> : null}
-                        </div>
-
-                        <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
-                          <div className="space-y-3">
-                            {videoJob?.videoUrl ? (
-                              <>
-                                <div className="rounded-lg border border-paper/10 bg-panel p-3">
-                                  <div className={videoFrameClassName}>
-                                    <video
-                                      src={videoJob.videoUrl}
-                                      controls
-                                      className="h-full w-full rounded-md bg-black object-contain"
-                                    />
-                                  </div>
-                                </div>
-
-                                <a
-                                  href={videoJob.videoUrl}
-                                  download={`${slugify(result.brief.productName)}-scene-${scene.scene}.mp4`}
-                                  className="inline-block text-xs font-semibold text-ash underline decoration-paper/20 underline-offset-4 hover:text-bone"
-                                >
-                                  Download Scene {scene.scene}
-                                </a>
-                              </>
-                            ) : (
-                              <div className="rounded-lg border border-dashed border-paper/15 bg-panel p-4">
-                                <div className={videoFrameClassName}>
-                                  <div className="flex h-full w-full items-center justify-center rounded-md border border-paper/10 bg-ink p-4 text-center">
-                                    <p className="font-mono text-[11px] uppercase tracking-widest text-ash">
-                                      {videoJob ? videoJob.status : "Not rendered"}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {videoJob ? (
-                              <div className="rounded-sm border border-paper/10 bg-panel p-3 font-mono text-xs text-ash">
-                                <p>
-                                  Last updated: {new Date(videoJob.updatedAt).toLocaleString()}
-                                </p>
-
-                                <p className="mt-1">Poll attempts: {videoJob.attempts}</p>
-
-                                {isInFlightJobStatus(videoJob.status) ? (
-                                  <p className="mt-1">
-                                    Status checks run automatically while this scene is in progress.
-                                  </p>
-                                ) : null}
-
-                                {videoJob.errorMessage ? (
-                                  <p className="mt-1 text-flame">{videoJob.errorMessage}</p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className="min-w-0">
-                            {sceneActionError ? (
-                              <p
-                                role="alert"
-                                className="mb-4 rounded-lg border border-flame/30 bg-flame/10 p-4 text-sm leading-6 text-flame"
-                              >
-                                {sceneActionError}
-                              </p>
-                            ) : null}
-
-                            <h3 className="font-display text-xl font-medium text-bone">
-                              {scene.title}
-                            </h3>
-
-                            <p className="mt-3 text-sm leading-6 text-ash">
-                              {scene.visual}
-                            </p>
-
-                            {canRegenerate ? (
-                              <Form method="post" className="mt-4">
-                                <input type="hidden" name="intent" value="create-video-task" />
-                                <input type="hidden" name="scene" value={scene.scene} />
-                                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                                  <label
-                                    htmlFor={`voiceOver-${scene.scene}`}
-                                    className="block font-mono text-[11px] uppercase tracking-widest text-ash"
-                                  >
-                                    Voice-over
-                                  </label>
-                                  <span className="font-mono text-[11px] text-ash">
-                                    Max {project.maxVoiceOverChars} chars
-                                  </span>
-                                </div>
-                                <textarea
-                                  id={`voiceOver-${scene.scene}`}
-                                  name="voiceOver"
-                                  defaultValue={currentVoiceOver}
-                                  maxLength={project.maxVoiceOverChars}
-                                  rows={3}
-                                  className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
-                                />
-
-                                <label
-                                  htmlFor={`prompt-${scene.scene}`}
-                                  className="mt-4 block font-mono text-[11px] uppercase tracking-widest text-ash"
-                                >
-                                  Video Prompt
-                                </label>
-                                <textarea
-                                  id={`prompt-${scene.scene}`}
-                                  name="prompt"
-                                  defaultValue={currentPrompt}
-                                  rows={6}
-                                  className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/80 outline-none focus:border-gold/50"
-                                />
-                                <button
-                                  type="submit"
-                                  disabled={isCreatingVideo}
-                                  className="mt-3 rounded bg-flame px-4 py-2 text-sm font-semibold text-bone transition hover:bg-flame/90"
-                                >
-                                  {isCreatingVideo
-                                    ? "Queuing scene video..."
-                                    : videoJob
-                                      ? "Regenerate Scene Video"
-                                      : "Generate Scene Video"}
-                                </button>
-                              </Form>
-                            ) : (
-                              <>
-                                <p className="mt-3 rounded-sm border border-paper/10 bg-panel p-3 text-sm text-bone/80">
-                                  <span className="font-semibold text-bone">Voice-over:</span>{" "}
-                                  {currentVoiceOver}
-                                </p>
-
-                                <p className="mt-3 rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/70">
-                                  {currentPrompt}
-                                </p>
-
-                                <Form method="post" className="mt-3">
-                                  <input type="hidden" name="intent" value="refresh-video-task" />
-                                  <input type="hidden" name="scene" value={scene.scene} />
-                                  <button
-                                    type="submit"
-                                    disabled={isRefreshingVideo}
-                                    className="rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
-                                  >
-                                    {isRefreshingVideo ? "Checking Wan status..." : "Check Wan Status"}
-                                  </button>
-                                </Form>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="rounded-full border border-gold/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                          Scene {String(scene.scene).padStart(2, "0")}
+                        </span>
+                        {videoJob ? <StatusTag status={videoJob.status} /> : null}
                       </div>
 
-                      <div className="sprockets sprockets-panel" aria-hidden />
+                      {sceneActionError ? (
+                        <p
+                          role="alert"
+                          className="mt-3 rounded-lg border border-flame/30 bg-flame/10 p-3 text-sm leading-6 text-flame"
+                        >
+                          {sceneActionError}
+                        </p>
+                      ) : null}
+
+                      {isEditingThisScene ? (
+                        <Form method="post" className="mt-3">
+                          <input type="hidden" name="intent" value="edit-scene" />
+                          <input type="hidden" name="scene" value={scene.scene} />
+
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <label
+                              htmlFor={`voiceOver-${scene.scene}`}
+                              className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                            >
+                              Voice-over
+                            </label>
+                            <span className="font-mono text-[11px] text-ash">
+                              Max {project.maxVoiceOverChars} chars
+                            </span>
+                          </div>
+                          <textarea
+                            id={`voiceOver-${scene.scene}`}
+                            name="voiceOver"
+                            defaultValue={currentVoiceOver}
+                            maxLength={project.maxVoiceOverChars}
+                            rows={3}
+                            className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                          />
+
+                          <label
+                            htmlFor={`prompt-${scene.scene}`}
+                            className="mt-4 block font-mono text-[11px] uppercase tracking-widest text-ash"
+                          >
+                            Video Prompt
+                          </label>
+                          <textarea
+                            id={`prompt-${scene.scene}`}
+                            name="prompt"
+                            defaultValue={currentPrompt}
+                            rows={6}
+                            className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 font-mono text-xs leading-6 text-bone/80 outline-none focus:border-gold/50"
+                          />
+
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button
+                              type="submit"
+                              disabled={isSavingEdit}
+                              className="rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                            >
+                              {isSavingEdit ? "Saving..." : "Save Edit"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingScene(null)}
+                              className="rounded px-4 py-2 text-sm font-semibold text-ash transition hover:text-bone"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </Form>
+                      ) : (
+                        <div className="mt-3">
+                          <p className="line-clamp-2 text-sm text-bone/80">
+                            <span className="font-semibold text-bone">Voice-over: </span>
+                            {currentVoiceOver}
+                          </p>
+                          <p className="mt-2 line-clamp-2 font-mono text-xs leading-5 text-ash">
+                            {currentPrompt}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setEditingScene(scene.scene)}
+                            className="mt-3 rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
+            </ResultCard>
+
+            <ResultCard title="Generated Videos" eyebrow="Render">
+              <div className="space-y-4">
+                <Form method="post">
+                  <input type="hidden" name="intent" value="create-all-video-tasks" />
+                  <button
+                    type="submit"
+                    disabled={isCreatingAllVideos}
+                    className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
+                  >
+                    {isCreatingAllVideos ? "Queuing scene videos..." : "Generate 5 Scene Videos"}
+                  </button>
+                </Form>
+
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {result.storyboard.map((scene) => {
+                    const videoJob = project.videoJobs?.find(
+                      (job) => job.scene === scene.scene,
+                    );
+                    const isPendingForThisScene =
+                      pendingScene === String(scene.scene);
+                    const isCreatingVideo =
+                      isPendingForThisScene && pendingIntent === "create-video-task";
+                    const isRefreshingVideo =
+                      isPendingForThisScene && pendingIntent === "refresh-video-task";
+                    const canRegenerate = !videoJob || isTerminalJobStatus(videoJob.status);
+
+                    return (
+                      <div
+                        key={scene.scene}
+                        className="rounded-lg border border-paper/10 bg-panel-raised p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-gold/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                            Scene {String(scene.scene).padStart(2, "0")}
+                          </span>
+                          {videoJob ? <StatusTag status={videoJob.status} /> : null}
+                        </div>
+
+                        {videoJob?.videoUrl ? (
+                          <>
+                            <div
+                              className={`mt-3 ${getVideoFrameClassName(result.brief.aspectRatio, "grid")}`}
+                            >
+                              <video
+                                src={videoJob.videoUrl}
+                                controls
+                                className="h-full w-full rounded-md bg-black object-contain"
+                              />
+                            </div>
+                            <a
+                              href={videoJob.videoUrl}
+                              download={`${slugify(result.brief.productName)}-scene-${scene.scene}.mp4`}
+                              className="mt-2 inline-block text-xs font-semibold text-ash underline decoration-paper/20 underline-offset-4 hover:text-bone"
+                            >
+                              Download Scene {scene.scene}
+                            </a>
+                          </>
+                        ) : (
+                          <div
+                            className={`mt-3 flex items-center justify-center rounded-md border border-dashed border-paper/15 bg-ink ${getVideoFrameClassName(result.brief.aspectRatio, "grid")}`}
+                          >
+                            <p className="font-mono text-[11px] uppercase tracking-widest text-ash">
+                              {videoJob ? videoJob.status : "Not rendered"}
+                            </p>
+                          </div>
+                        )}
+
+                        {videoJob?.errorMessage ? (
+                          <p className="mt-2 text-sm text-flame">{videoJob.errorMessage}</p>
+                        ) : null}
+
+                        <div className="mt-3">
+                          {canRegenerate ? (
+                            <Form method="post">
+                              <input type="hidden" name="intent" value="create-video-task" />
+                              <input type="hidden" name="scene" value={scene.scene} />
+                              <input
+                                type="hidden"
+                                name="prompt"
+                                value={videoJob?.prompt ?? scene.videoPrompt}
+                              />
+                              <input
+                                type="hidden"
+                                name="voiceOver"
+                                value={videoJob?.voiceOver ?? scene.voiceOver}
+                              />
+                              <button
+                                type="submit"
+                                disabled={isCreatingVideo}
+                                className="w-full rounded bg-flame px-4 py-3 text-sm font-semibold text-bone transition hover:bg-flame/90"
+                              >
+                                {isCreatingVideo
+                                  ? "Queuing..."
+                                  : videoJob
+                                    ? "Regenerate Scene Video"
+                                    : "Generate Scene Video"}
+                              </button>
+                            </Form>
+                          ) : (
+                            <Form method="post">
+                              <input type="hidden" name="intent" value="refresh-video-task" />
+                              <input type="hidden" name="scene" value={scene.scene} />
+                              <button
+                                type="submit"
+                                disabled={isRefreshingVideo}
+                                className="w-full rounded border border-paper/15 px-4 py-2 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                              >
+                                {isRefreshingVideo ? "Checking..." : "Check Wan Status"}
+                              </button>
+                            </Form>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </ResultCard>
 
@@ -888,6 +989,92 @@ export default function ProjectDetail() {
               </p>
             </div>
 
+            <ResultCard title="Final Product Drama Ad" eyebrow="Output" accent>
+              <div className="space-y-4">
+                <p className="text-sm leading-6 text-ash">
+                  Once all 5 scene videos succeed, stitch them into one
+                  downloadable ad ready for TikTok, Reels, or Shorts.
+                </p>
+
+                {isFinalVideoStale ? (
+                  <p className="rounded-lg border border-gold/30 bg-gold/10 p-4 text-sm leading-6 text-gold">
+                    A scene was regenerated after this video was stitched — re-stitch
+                    to include the latest clips.
+                  </p>
+                ) : null}
+
+                {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
+                  <div className="rounded-lg border border-paper/10 bg-panel-raised p-4">
+                    <div className={getVideoFrameClassName(result.brief.aspectRatio, "sidebar")}>
+                      <video
+                        src={project.finalVideo.videoUrl}
+                        controls
+                        className="h-full w-full rounded-md bg-black object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {project.finalVideo ? (
+                  <div className="rounded-sm border border-paper/10 bg-panel-raised p-4">
+                    <p className="text-sm text-ash">
+                      Status:{" "}
+                      <StatusTag status={project.finalVideo.status} />
+                    </p>
+
+                    <p className="mt-2 font-mono text-xs text-ash">
+                      Last updated: {new Date(project.finalVideo.updatedAt).toLocaleString()}
+                    </p>
+
+                    {isInFlightJobStatus(project.finalVideo.status) ? (
+                      <p className="mt-2 text-sm text-ash">
+                        This page checks final video progress automatically.
+                      </p>
+                    ) : null}
+
+                    {project.finalVideo.errorMessage ? (
+                      <p className="mt-2 text-sm text-flame">
+                        {project.finalVideo.errorMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-3">
+                  {allScenesSucceeded ? (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="create-stitch-task" />
+                      <button
+                        type="submit"
+                        disabled={isStitchingFinalVideo}
+                        className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
+                      >
+                        {isStitchingFinalVideo
+                          ? "Queuing final ad..."
+                          : project.finalVideo
+                            ? "Re-stitch Final Ad"
+                            : "Stitch Final Ad"}
+                      </button>
+                    </Form>
+                  ) : (
+                    <p className="text-sm text-ash">
+                      Generate successful videos for all 5 scenes to unlock final stitching.
+                    </p>
+                  )}
+
+                  {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
+                    <a
+                      href={project.finalVideo.videoUrl}
+                      download={`${slugify(result.brief.productName)}-drama-ad.mp4`}
+                      className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
+                    >
+                      Download Final Ad
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </ResultCard>
+
             <ResultCard title="Production Timeline" eyebrow="Credits">
               <AgentTimeline
                 states={{
@@ -902,39 +1089,17 @@ export default function ProjectDetail() {
               />
             </ResultCard>
 
-            {result.analysis ? (
-              <ResultCard title="Product Analysis" eyebrow="Vision">
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                  <SmallItem label="Category" value={result.analysis.category} />
-                  <SmallItem label="Colors" value={result.analysis.colors.join(", ")} />
-                  <SmallItem label="Material" value={result.analysis.material} />
-                  <SmallItem
-                    label="Branding"
-                    value={result.analysis.brandingVisible || "None visible"}
-                  />
-                  <SmallItem
-                    label="Photo Quality"
-                    value={
-                      result.analysis.quality.charAt(0).toUpperCase() +
-                      result.analysis.quality.slice(1)
-                    }
-                  />
-                  <SmallItem
-                    label="Product Reference"
-                    value={result.analysis.canUseAsReference ? "Usable" : "Not usable"}
+            <ResultCard title="Project Info" eyebrow="Inputs">
+              {result.brief.imageUrl ? (
+                <div className="mb-4 overflow-hidden rounded-sm border border-paper/10 bg-panel">
+                  <img
+                    src={result.brief.imageUrl}
+                    alt={result.brief.productName}
+                    className="h-32 w-full object-contain p-2"
                   />
                 </div>
+              ) : null}
 
-                {result.analysis.issues.length > 0 ? (
-                  <p className="mt-4 text-sm leading-6 text-ash">
-                    <span className="font-semibold text-bone">Issues noted: </span>
-                    {result.analysis.issues.join(", ")}
-                  </p>
-                ) : null}
-              </ResultCard>
-            ) : null}
-
-            <ResultCard title="Product Brief" eyebrow="Inputs">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
                 <SmallItem label="Product" value={result.brief.productName} />
                 <SmallItem label="Image" value={result.brief.imageName} />
@@ -977,20 +1142,6 @@ export default function ProjectDetail() {
                   ) : null}
                 </div>
               ) : null}
-            </ResultCard>
-
-            <ResultCard title="Story Concept" eyebrow="Logline">
-              <p className="text-bone/80">{result.concept}</p>
-            </ResultCard>
-
-            <ResultCard title="Hook" eyebrow="Cold Open">
-              <p className="font-display text-2xl font-medium leading-snug text-bone">
-                “{result.hook}”
-              </p>
-            </ResultCard>
-
-            <ResultCard title="Voice-over" eyebrow="Script">
-              <p className="leading-7 text-bone/80">{result.voiceOver}</p>
             </ResultCard>
           </aside>
         </section>
@@ -1054,16 +1205,72 @@ function getAspectRatioLabel(aspectRatio: string | undefined): string {
   return "9:16 TikTok/Reels/Shorts";
 }
 
-function getVideoFrameClassName(aspectRatio: string | undefined): string {
-  if (aspectRatio === "1:1") {
-    return "mx-auto aspect-square w-full max-w-[560px] overflow-hidden rounded-md bg-black";
-  }
+function getVideoFrameClassName(
+  aspectRatio: string | undefined,
+  size: "sidebar" | "grid",
+): string {
+  const aspectClass =
+    aspectRatio === "1:1"
+      ? "aspect-square"
+      : aspectRatio === "16:9"
+        ? "aspect-video"
+        : "aspect-9/16";
 
-  if (aspectRatio === "16:9") {
-    return "mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-md bg-black";
-  }
+  const maxWidth =
+    size === "sidebar"
+      ? aspectRatio === "1:1"
+        ? "max-w-[360px]"
+        : aspectRatio === "16:9"
+          ? "max-w-[380px]"
+          : "max-w-[300px]"
+      : aspectRatio === "1:1"
+        ? "max-w-[320px]"
+        : aspectRatio === "16:9"
+          ? "max-w-[360px]"
+          : "max-w-[260px]";
 
-  return "mx-auto aspect-9/16 w-full max-w-[360px] overflow-hidden rounded-md bg-black";
+  return `mx-auto ${aspectClass} w-full ${maxWidth} overflow-hidden rounded-md bg-black`;
+}
+
+function getProjectStatusLabel(project: SavedProject): string {
+  const hasFailed =
+    project.videoJobs?.some((job) => isFailedJobStatus(job.status)) ||
+    project.finalVideo?.status === "FAILED" ||
+    project.finalVideo?.status === "CANCELED" ||
+    false;
+
+  if (hasFailed) return "Failed";
+
+  const hasInFlight =
+    project.videoJobs?.some((job) => isInFlightJobStatus(job.status)) ||
+    (project.finalVideo ? isInFlightJobStatus(project.finalVideo.status) : false);
+
+  if (hasInFlight) return "Rendering";
+  if (project.finalVideo?.status === "SUCCEEDED") return "Completed";
+
+  return "Draft";
+}
+
+function ProjectStatusPill({ label }: { label: string }) {
+  const isFailed = label === "Failed";
+  const isActive = label === "Rendering";
+  const isReady = label === "Completed";
+
+  return (
+    <span
+      className={
+        isFailed
+          ? "rounded-full border border-flame/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-flame"
+          : isActive
+            ? "rounded-full border border-gold/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
+            : isReady
+              ? "rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold"
+              : "rounded-full border border-paper/20 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-ash"
+      }
+    >
+      {label}
+    </span>
+  );
 }
 
 function StatusTag({ status }: { status: string }) {

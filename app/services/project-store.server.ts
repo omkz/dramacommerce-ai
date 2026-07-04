@@ -255,6 +255,19 @@ export async function saveVideoJob(
   return (await getProject(projectId, userId)) as SavedProject;
 }
 
+export async function updateShowPlan(
+  id: string,
+  userId: string,
+  showPlan: ShowPlan,
+): Promise<SavedProject | null> {
+  await db
+    .update(projects)
+    .set({ showPlan })
+    .where(and(eq(projects.id, id), eq(projects.userId, userId)));
+
+  return getProject(id, userId);
+}
+
 export async function saveFinalVideo(
   projectId: string,
   userId: string,

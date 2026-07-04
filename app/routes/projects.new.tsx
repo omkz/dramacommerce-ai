@@ -152,7 +152,7 @@ export async function action({ request }: ActionFunctionArgs) {
         };
     }
 
-    return redirect(`/generate/${showrunnerJobId}`);
+    return redirect(`/projects/new/${showrunnerJobId}`);
 }
 
 function getFormString(formData: FormData, key: string): string {

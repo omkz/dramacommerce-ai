@@ -45,7 +45,7 @@ export default function ProjectsIndex() {
           </div>
 
           <Link
-            to="/generate"
+            to="/projects/new"
             className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
             Create Product Ad
@@ -65,7 +65,7 @@ export default function ProjectsIndex() {
             </p>
 
             <Link
-              to="/generate"
+              to="/projects/new"
               className="mt-6 inline-flex rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
             >
               Create Product Ad

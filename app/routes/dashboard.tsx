@@ -55,7 +55,7 @@ export default function Dashboard() {
 
           <div className="flex flex-wrap gap-3">
             <Link
-              to="/generate"
+              to="/projects/new"
               className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
             >
               Create Product Ad
@@ -90,7 +90,7 @@ export default function Dashboard() {
                   title="No projects yet"
                   body="Create your first product drama ad to populate the dashboard."
                   actionLabel="Create Product Ad"
-                  actionTo="/generate"
+                  actionTo="/projects/new"
                 />
               )}
             </Panel>

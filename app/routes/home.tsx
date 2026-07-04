@@ -66,7 +66,7 @@ export default function Home() {
 
         <div className="mt-10 flex flex-wrap items-center gap-5">
           <a
-            href="/generate"
+            href="/projects/new"
             className="rounded bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
             Create Product Ad

@@ -4,9 +4,9 @@ export default [
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
     route("dashboard", "routes/dashboard.tsx"),
-    route("generate", "routes/generate.tsx"),
-    route("generate/:jobId", "routes/generate.$jobId.tsx"),
     route("projects", "routes/projects.tsx"),
+    route("projects/new", "routes/projects.new.tsx"),
+    route("projects/new/:jobId", "routes/projects.new.$jobId.tsx"),
     route("projects/:projectId", "routes/projects.$projectId.tsx"),
   ]),
   route("health", "routes/health.ts"),

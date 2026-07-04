@@ -85,7 +85,7 @@ export default function GenerateJobStatus() {
   return (
     <main className="min-h-screen bg-ink px-6 py-10 text-bone">
       <div className="mx-auto max-w-3xl">
-        <Link to="/generate" className="text-sm text-ash hover:text-bone">
+        <Link to="/projects/new" className="text-sm text-ash hover:text-bone">
           ← Back to brief
         </Link>
 
@@ -131,7 +131,7 @@ export default function GenerateJobStatus() {
                 "Unable to generate a show plan with Qwen. Try again later."}
             </p>
             <Link
-              to="/generate"
+              to="/projects/new"
               className="mt-3 inline-block font-semibold text-flame underline decoration-flame/40 underline-offset-4 hover:text-flame/80"
             >
               Try again

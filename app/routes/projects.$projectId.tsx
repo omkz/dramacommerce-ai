@@ -525,7 +525,7 @@ export default function ProjectDetail() {
     <main className="min-h-screen bg-ink px-6 py-10 text-bone">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-paper/10 pb-4">
-          <Link to="/generate" className="text-sm text-ash hover:text-bone">
+          <Link to="/projects/new" className="text-sm text-ash hover:text-bone">
             ← Create another ad
           </Link>
 

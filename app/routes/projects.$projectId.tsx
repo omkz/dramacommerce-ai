@@ -485,6 +485,11 @@ export default function ProjectDetail() {
         (job) => job.scene === scene.scene && job.status === "SUCCEEDED",
       ),
     );
+  const hasScenesNeedingGeneration = result.storyboard.some((scene) => {
+    const job = project.videoJobs?.find((item) => item.scene === scene.scene);
+
+    return !job || isFailedJobStatus(job.status);
+  });
   const isFinalVideoStale =
     project.finalVideo?.status === "SUCCEEDED" &&
     project.videoJobs?.some(
@@ -519,7 +524,7 @@ export default function ProjectDetail() {
   return (
     <main className="min-h-screen bg-ink px-6 py-10 text-bone">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-paper/10 pb-4">
           <Link to="/generate" className="text-sm text-ash hover:text-bone">
             ← Create another ad
           </Link>
@@ -635,7 +640,7 @@ export default function ProjectDetail() {
                     id="concept"
                     name="concept"
                     defaultValue={result.concept}
-                    rows={2}
+                    rows={4}
                     className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
                   />
                 </div>
@@ -651,7 +656,7 @@ export default function ProjectDetail() {
                     id="hook"
                     name="hook"
                     defaultValue={result.hook}
-                    rows={2}
+                    rows={3}
                     className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
                   />
                 </div>
@@ -667,7 +672,7 @@ export default function ProjectDetail() {
                     id="storyVoiceOver"
                     name="voiceOver"
                     defaultValue={result.voiceOver}
-                    rows={3}
+                    rows={5}
                     className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
                   />
                 </div>
@@ -683,15 +688,22 @@ export default function ProjectDetail() {
             </ResultCard>
 
             <ResultCard title="Storyboard" eyebrow="5 Scenes">
-              <div className="flex gap-3 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+              <div className="flex gap-3 overflow-x-auto pb-1 lg:grid lg:grid-cols-3 lg:overflow-visible">
                 {result.storyboard.map((scene) => (
                   <div
                     key={scene.scene}
-                    className="w-44 shrink-0 rounded-sm border border-paper/10 bg-panel-raised p-4 lg:w-auto lg:min-w-[180px] lg:flex-1"
+                    className="w-44 shrink-0 rounded-sm border border-paper/10 bg-panel-raised p-4 lg:w-auto"
                   >
-                    <span className="rounded-full border border-gold/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
-                      Scene {String(scene.scene).padStart(2, "0")}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-gold/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                        Scene {String(scene.scene).padStart(2, "0")}
+                      </span>
+                      {scene.useProductReference ? (
+                        <span className="rounded-full border border-gold/30 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">
+                          Uses product photo
+                        </span>
+                      ) : null}
+                    </div>
                     <h3 className="mt-3 font-display text-base font-medium text-bone">
                       {scene.title}
                     </h3>
@@ -827,10 +839,18 @@ export default function ProjectDetail() {
                   <input type="hidden" name="intent" value="create-all-video-tasks" />
                   <button
                     type="submit"
-                    disabled={isCreatingAllVideos}
-                    className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
+                    disabled={isCreatingAllVideos || !hasScenesNeedingGeneration}
+                    className={
+                      hasScenesNeedingGeneration
+                        ? "rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90 disabled:opacity-60"
+                        : "rounded border border-paper/15 px-5 py-3 font-semibold text-ash"
+                    }
                   >
-                    {isCreatingAllVideos ? "Queuing scene videos..." : "Generate 5 Scene Videos"}
+                    {isCreatingAllVideos
+                      ? "Queuing scene videos..."
+                      : hasScenesNeedingGeneration
+                        ? "Generate 5 Scene Videos"
+                        : "All 5 Scenes Rendered"}
                   </button>
                 </Form>
 
@@ -846,6 +866,7 @@ export default function ProjectDetail() {
                     const isRefreshingVideo =
                       isPendingForThisScene && pendingIntent === "refresh-video-task";
                     const canRegenerate = !videoJob || isTerminalJobStatus(videoJob.status);
+                    const needsAction = !videoJob || isFailedJobStatus(videoJob.status);
 
                     return (
                       <div
@@ -910,7 +931,11 @@ export default function ProjectDetail() {
                               <button
                                 type="submit"
                                 disabled={isCreatingVideo}
-                                className="w-full rounded bg-flame px-4 py-3 text-sm font-semibold text-bone transition hover:bg-flame/90"
+                                className={
+                                  needsAction
+                                    ? "w-full rounded bg-flame px-4 py-3 text-sm font-semibold text-bone transition hover:bg-flame/90"
+                                    : "w-full rounded border border-paper/15 px-4 py-3 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                                }
                               >
                                 {isCreatingVideo
                                   ? "Queuing..."
@@ -1101,12 +1126,9 @@ export default function ProjectDetail() {
               ) : null}
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                <SmallItem label="Product" value={result.brief.productName} />
                 <SmallItem label="Image" value={result.brief.imageName} />
                 <SmallItem label="Audience" value={result.brief.targetAudience} />
                 <SmallItem label="Mood" value={result.brief.mood} />
-                <SmallItem label="Platform" value={result.brief.platform} />
-                <SmallItem label="Duration" value={result.brief.duration} />
                 <SmallItem
                   label="Aspect Ratio"
                   value={getAspectRatioLabel(result.brief.aspectRatio)}

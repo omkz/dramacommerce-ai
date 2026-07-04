@@ -1,4 +1,4 @@
-import { callQwenJson } from "~/services/qwen.server";
+import { callQwenJson, type QwenUsage } from "~/services/qwen.server";
 import { deriveBrandVoiceSkill } from "~/services/skills/brand-voice-skill.server";
 import { deriveCommerceAngleSkill } from "~/services/skills/commerce-angle-skill.server";
 import { formatSkillResult } from "~/services/skills/format-skill-result";
@@ -8,6 +8,7 @@ import type { ProductAnalysis, ProductBrief, StoryPackage } from "~/types/showru
 export async function runStoryAgent(
   brief: ProductBrief,
   analysis: ProductAnalysis,
+  onUsage?: (usage: QwenUsage) => void,
 ): Promise<StoryPackage> {
   const commerceAngle = deriveCommerceAngleSkill(brief);
   const brandVoice = deriveBrandVoiceSkill(brief);
@@ -45,6 +46,7 @@ Rules:
 - Write for ${brief.platform} in a ${brief.mood} mood.
 - The voice-over should fit ${brief.duration}.
 `,
+    onUsage,
   });
 
   return validateStoryPackage(rawResult);

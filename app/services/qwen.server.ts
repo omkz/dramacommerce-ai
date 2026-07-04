@@ -34,7 +34,26 @@ type QwenChatResponse = {
       tool_calls?: QwenToolCall[];
     };
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
 };
+
+export type QwenUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+function addUsage(a: QwenUsage, b: QwenChatResponse["usage"]): QwenUsage {
+  return {
+    promptTokens: a.promptTokens + (b?.prompt_tokens ?? 0),
+    completionTokens: a.completionTokens + (b?.completion_tokens ?? 0),
+    totalTokens: a.totalTokens + (b?.total_tokens ?? 0),
+  };
+}
 
 const MAX_TOOL_CALL_ROUNDS = 4;
 
@@ -68,12 +87,14 @@ export async function callQwenJson({
   tools,
   toolHandlers,
   requiredToolNames = [],
+  onUsage,
 }: {
   system: string;
   user: string;
   tools?: QwenTool[];
   toolHandlers?: QwenToolHandlers;
   requiredToolNames?: string[];
+  onUsage?: (usage: QwenUsage) => void;
 }): Promise<unknown> {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.QWEN_BASE_URL;
@@ -88,6 +109,7 @@ export async function callQwenJson({
     { role: "user", content: user },
   ];
   const calledToolNames = new Set<string>();
+  let usage: QwenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
   for (let round = 0; round < MAX_TOOL_CALL_ROUNDS; round++) {
     const requiredToolName = requiredToolNames.find(
@@ -132,6 +154,7 @@ export async function callQwenJson({
 
     const data = (await response.json()) as QwenChatResponse;
     const message = data.choices?.[0]?.message;
+    usage = addUsage(usage, data.usage);
 
     if (process.env.QWEN_DEBUG) {
       console.log(`[qwen debug] round ${round}:`, JSON.stringify(message, null, 2));
@@ -181,7 +204,9 @@ export async function callQwenJson({
     }
 
     try {
-      return JSON.parse(cleanJsonResponse(message.content));
+      const parsed = JSON.parse(cleanJsonResponse(message.content));
+      onUsage?.(usage);
+      return parsed;
     } catch (error) {
       throw new QwenResponseError("Qwen returned invalid JSON.");
     }
@@ -196,10 +221,12 @@ export async function callQwenVisionJson({
   system,
   user,
   imageDataUrl,
+  onUsage,
 }: {
   system: string;
   user: string;
   imageDataUrl: string;
+  onUsage?: (usage: QwenUsage) => void;
 }): Promise<unknown> {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   const baseUrl = process.env.QWEN_BASE_URL;
@@ -245,7 +272,9 @@ export async function callQwenVisionJson({
   }
 
   try {
-    return JSON.parse(cleanJsonResponse(message.content));
+    const parsed = JSON.parse(cleanJsonResponse(message.content));
+    onUsage?.(addUsage({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }, data.usage));
+    return parsed;
   } catch (error) {
     throw new QwenResponseError("Qwen returned invalid JSON.");
   }

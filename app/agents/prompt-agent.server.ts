@@ -1,9 +1,10 @@
 import { callQwenJson } from "~/services/qwen.server";
-import type { QwenTool, QwenToolHandlers } from "~/services/qwen.server";
+import type { QwenTool, QwenToolHandlers, QwenUsage } from "~/services/qwen.server";
 import { validateStoryboard } from "~/services/showrunner-validator.server";
 import type {
   DirectedScene,
   ProductBrief,
+  StoryBible,
   StoryboardScene,
 } from "~/types/showrunner";
 
@@ -32,7 +33,9 @@ function getWanVideoConstraints(aspectRatio?: string) {
 export async function runPromptAgent(
   brief: ProductBrief,
   scenes: DirectedScene[],
+  storyBible: StoryBible,
   revisionNotes?: string,
+  onUsage?: (usage: QwenUsage) => void,
 ): Promise<StoryboardScene[]> {
   const promptAgentToolHandlers: QwenToolHandlers = {
     get_wan_video_constraints: () => getWanVideoConstraints(brief.aspectRatio),
@@ -43,8 +46,8 @@ export async function runPromptAgent(
     user: `
 Add Wan text-to-video prompts to each directed scene.
 
-Product brief:
-${JSON.stringify(brief, null, 2)}
+Story bible (compact production context — product facts, visual style, story core, constraints):
+${JSON.stringify(storyBible, null, 2)}
 
 Directed scenes:
 ${JSON.stringify(scenes, null, 2)}
@@ -85,6 +88,7 @@ Rules:
     tools: [GET_WAN_VIDEO_CONSTRAINTS_TOOL],
     toolHandlers: promptAgentToolHandlers,
     requiredToolNames: ["get_wan_video_constraints"],
+    onUsage,
   });
 
   return validateStoryboard(rawResult);

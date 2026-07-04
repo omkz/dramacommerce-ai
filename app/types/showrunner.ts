@@ -49,6 +49,47 @@ export type StoryboardScene = DirectedScene & {
   videoPrompt: string;
 };
 
+// Compact working-memory context handed to Director/Prompt/Critic/Editor
+// instead of re-serializing the full brief/analysis/story objects into every
+// prompt — those agents don't need every raw field (imageUrl, imageName,
+// showProductOverlay aren't creative context), just the facts that actually
+// shape their output.
+export type StoryBible = {
+  productFacts: {
+    name: string;
+    category: string;
+    colors: string[];
+    material: string;
+    audience: string;
+    keySellingPoints?: string;
+    offer?: string;
+  };
+  visualStyle: {
+    mood: string;
+    platform: string;
+    aspectRatio: "9:16" | "1:1" | "16:9";
+    quality: "good" | "medium" | "poor";
+    canUseAsReference: boolean;
+    productReferenceMode: "auto" | "force" | "disable";
+  };
+  storyCore: {
+    concept: string;
+    hook: string;
+    voiceOver: string;
+  };
+  constraints: {
+    duration: string;
+  };
+};
+
+export type AgentTokenUsage = {
+  stage: "analyze" | "story" | "director" | "prompt" | "critic" | "editor";
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
 export type EditorPackage = {
   timeline: string[];
   caption: string;
@@ -66,4 +107,6 @@ export type ShowPlan = {
   timeline: string[];
   caption: string;
   cta: string;
+  // Optional so projects saved before this tracking existed still parse fine.
+  tokenUsage?: AgentTokenUsage[];
 };

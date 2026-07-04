@@ -1,10 +1,11 @@
-import { callQwenVisionJson } from "~/services/qwen.server";
+import { callQwenVisionJson, type QwenUsage } from "~/services/qwen.server";
 import { readUploadedImageAsDataUrl } from "~/services/image-upload.server";
 import { validateProductAnalysis } from "~/services/showrunner-validator.server";
 import type { ProductAnalysis, ProductBrief } from "~/types/showrunner";
 
 export async function runAnalyzeAgent(
   brief: ProductBrief,
+  onUsage?: (usage: QwenUsage) => void,
 ): Promise<ProductAnalysis> {
   const imageDataUrl = await readUploadedImageAsDataUrl(brief.imageUrl);
 
@@ -31,6 +32,7 @@ Rules:
 - List concrete "issues" (e.g. "background clutter", "low lighting", "product partially cropped") when relevant, empty array if none.
 `,
     imageDataUrl,
+    onUsage,
   });
 
   return validateProductAnalysis(rawResult);

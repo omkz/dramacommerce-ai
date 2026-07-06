@@ -7,17 +7,17 @@ Merchant
   |
   v
 React Router app
-  |-- /generate product brief form
+  |-- /projects/new product brief form
   |-- showrunner_jobs table
   |-- Redis/BullMQ showrunner queue
   |     `-- worker:showrunner
   |         |-- Analyze Agent
-  |         |-- Story Agent
-  |         |-- Director Agent
-  |         |-- Prompt Agent
-  |         |-- Critic Agent
-  |         `-- Editor Agent
-  |-- projects table
+  |         |-- Story Agent  --> builds Story Bible
+  |         |-- Director Agent  (reads Story Bible)
+  |         |-- Prompt Agent    (reads Story Bible)
+  |         |-- Critic Agent    (reads Story Bible)
+  |         `-- Editor Agent    (reads Story Bible)
+  |-- projects table (show_plan jsonb incl. tokenUsage)
   |-- Redis/BullMQ video queue
   |     `-- worker:video
   |         |-- Wan scene render
@@ -25,9 +25,11 @@ React Router app
   |         `-- ffmpeg final stitch
   `-- /projects/:id
         |-- Product Analysis
-        |-- Agent Timeline
-        |-- Storyboard
-        `-- Final ad output
+        |-- Story & Voice-over (Edit)
+        |-- Storyboard / Scene Prompts / Generated Videos
+        |-- Token Usage
+        |-- Agent Timeline (horizontal)
+        `-- Final ad output (sticky sidebar)
 ```
 
 ## Showrunner Pipeline
@@ -39,9 +41,22 @@ The showrunner has six Qwen-powered stages:
 3. Director Agent blocks the five-scene storyboard and chooses `useProductReference` per scene.
 4. Prompt Agent writes Wan-ready prompts after reading Wan constraints through the constraints tool.
 5. Critic Agent reviews the storyboard and can trigger one bounded prompt revision pass.
-6. Editor Agent writes the timeline, social caption, and CTA.
+6. Editor Agent writes the timeline, social caption, and CTA — reading the Hook from the Story Bible so the caption riffs on the same line the merchant sees, instead of drifting to its own angle.
 
-`/generate` creates a `showrunner_jobs` row and enqueues the job. `worker:showrunner` calls `generateShowPlan()` with `onStageChange`, so every stage transition is persisted and `/generate/:jobId` can render live progress. The project is saved only after all six stages succeed.
+`/projects/new` creates a `showrunner_jobs` row and enqueues the job. `worker:showrunner` calls `generateShowPlan()` with `onStageChange`, so every stage transition is persisted and `/projects/new/:jobId` can render live progress. The project is saved only after all six stages succeed.
+
+## Story Bible & Token Usage
+
+Director, Prompt, Critic, and Editor don't each get the full raw `brief`/`analysis`/`story` JSON re-serialized into their prompt — that repeats mostly-irrelevant fields (`imageUrl`, `showProductOverlay`, etc.) across five separate calls. Instead, `buildStoryBible()` (`app/services/story-bible.server.ts`) runs once, right after the Story Agent completes, condensing everything into one compact object:
+
+- `productFacts` — name, category, colors, material, audience, selling points, offer
+- `visualStyle` — mood, platform, aspect ratio, photo quality, reference eligibility, reference mode
+- `storyCore` — concept, hook, voice-over
+- `constraints` — duration
+
+That single object is what gets serialized into the four downstream agents' prompts. Raw `brief`/`analysis` are still passed into those agent functions where needed, but only for local skill computation (`services/skills/*`) — that's pure code, not something re-sent to Qwen.
+
+Every Qwen call also reports token usage: `callQwenJson`/`callQwenVisionJson` (`app/services/qwen.server.ts`) accept an `onUsage` callback, summing prompt/completion/total tokens across BullMQ tool-calling rounds. `generateShowPlan` tags each call with its stage and model, and the aggregated list is saved as `ShowPlan.tokenUsage` — shown as a table on the project detail page (stage, model, prompt/completion/total tokens, plus a totals row).
 
 ## Custom Skills
 
@@ -60,7 +75,7 @@ These skills do not replace Qwen. They provide structured facts, recommendations
 The Analyze Agent returns `canUseAsReference`. The Director Agent uses that value plus scene intent to set `useProductReference` per scene. The project page exposes both decisions:
 
 - Product Analysis shows `Product Reference: Usable` or `Not usable`.
-- Each storyboard scene shows `Product reference: usable` or `not used`.
+- The Storyboard overview badges the one scene (if any) the Director actually picked with `Uses product photo` — the common case is zero or one badge, since at most one scene should ever be reference-eligible.
 
 That makes image-to-video readiness visible even before render. When `useProductReference` is true, the video worker passes the uploaded product image into the Wan image-to-video path; otherwise it uses text-to-video.
 

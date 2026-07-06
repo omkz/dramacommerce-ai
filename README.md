@@ -11,6 +11,9 @@ The multimodal orchestration path is: image → product analysis → script → 
 - Vision-based Analyze Agent grounds the story in what the photo actually shows (category, colors, material, quality) instead of guessing from text alone
 - Custom internal skill layer augments the Qwen agents with commerce angle selection, brand voice guidance, prompt safety checks, and video-readiness validation
 - Critic Agent reviews the storyboard before render and can trigger one bounded revision pass
+- Compact "Story Bible" context object built once after the Story Agent, reused by every downstream agent instead of re-sending the full brief/analysis/story JSON each time
+- Per-agent token usage tracking (prompt/completion/total tokens, aggregated per pipeline stage) shown on the project page
+- Merchant-editable Story/Hook/Voice-over and per-scene prompt/voice-over, decoupled from the AI regenerate action — editing text never spends a Wan render, regenerating never requires re-typing text
 - Director Agent decides, per scene, whether Wan should animate directly from the real product photo (image-to-video) instead of text alone — only for scenes where that's visually coherent
 - Merchant-selectable product reference mode: Auto, force clean packshot/hero reference, or disable image-to-video reference frames
 - Output aspect ratio control: 9:16 portrait by default, with 1:1 and 16:9 available in Advanced settings
@@ -130,9 +133,9 @@ pnpm run start
 User
   ↓
 React Router full-stack app
-  ├─ /generate product brief form
+  ├─ /projects/new product brief form
   ├─ Redis/BullMQ showrunner queue → worker:showrunner (Analyze/Story/Director/Prompt/Critic/Editor agents)
-  ├─ /generate/:jobId live Agent Timeline (polls showrunner_jobs status)
+  ├─ /projects/new/:jobId live Agent Timeline (polls showrunner_jobs status)
   ├─ Postgres project store
   ├─ Redis/BullMQ video queue → worker:video (Render/Stitch)
   ├─ local image uploads
@@ -144,7 +147,9 @@ React Router full-stack app
         Alibaba Cloud Model Studio / DashScope
 ```
 
-The showrunner flow is split into six Qwen-powered stages: Analyze Agent (vision), Story Agent, Director Agent, Prompt Agent, Critic Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects. `/generate`'s action no longer runs these stages inline — it creates a `showrunner_jobs` row and enqueues a job; `worker:showrunner` runs `generateShowPlan` stage by stage, writing status back after each stage so `/generate/:jobId` can show live progress. On success it saves the project and the job redirects there; on failure (retries exhausted) it records the error and cleans up the uploaded image, same as the old synchronous failure path.
+The showrunner flow is split into six Qwen-powered stages: Analyze Agent (vision), Story Agent, Director Agent, Prompt Agent, Critic Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects. `/projects/new`'s action no longer runs these stages inline — it creates a `showrunner_jobs` row and enqueues a job; `worker:showrunner` runs `generateShowPlan` stage by stage, writing status back after each stage so `/projects/new/:jobId` can show live progress. On success it saves the project and the job redirects there; on failure (retries exhausted) it records the error and cleans up the uploaded image, same as the old synchronous failure path.
+
+Right after the Story Agent completes, a compact **Story Bible** (product facts, visual style, story core, constraints) is built once and reused by every downstream agent instead of re-serializing the full brief/analysis/story objects into each prompt — the Director, Prompt, Critic, and Editor agents only need a handful of those fields, not all of them repeated five times. Every Qwen call also reports its token usage, aggregated per stage and shown on the project page so the pipeline's cost is a real number, not just a claim.
 
 DramaCommerce AI also uses a custom internal skill layer to augment the Qwen-powered showrunner agents with commerce reasoning, product image analysis, brand voice adaptation, prompt safety checks, and video-readiness validation. These skills live under `app/services/skills/` and provide deterministic context or warnings before the agents write final creative output.
 
@@ -152,7 +157,7 @@ The Analyze Agent looks at the actual product photo and returns category/colors/
 
 Wan video generation is queued the same way. The web app stores video job state in Postgres and enqueues work in Redis/BullMQ, including each scene's `useProductReference` flag. The `worker:video` process creates Wan tasks (text-to-video by default, or image-to-video with the real uploaded photo when `useProductReference` is true), schedules polling jobs, and updates status, task IDs, attempts, video URLs, and provider errors.
 
-The shared `AgentTimeline` component (`app/components/agent-timeline.tsx`) renders all 8 stages (Analyze, Story, Director, Prompt, Critic, Editor, Render, Stitch) and is used on both `/generate/:jobId` (for the first 6, live) and `/projects/:id` (for all 8 — the first 6 always "done" since a project only exists once they succeed, Render/Stitch reflecting live `video_jobs`/`final_videos` state).
+The shared `AgentTimeline` component (`app/components/agent-timeline.tsx`) renders all 8 stages (Analyze, Story, Director, Prompt, Critic, Editor, Render, Stitch) and is used on both `/projects/new/:jobId` (for the first 6, live, vertical layout) and `/projects/:id` (for all 8 — the first 6 always "done" since a project only exists once they succeed, Render/Stitch reflecting live `video_jobs`/`final_videos` state, rendered as a horizontal stepper in a full-width section).
 
 ## Docker
 
@@ -166,9 +171,9 @@ docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacom
 
 ## Product Flow
 
-1. Open `/generate`.
+1. Open `/projects/new`.
 2. Upload a product image and submit a product brief with optional audience, benefits, offer, platform, mood, duration, and aspect ratio.
-3. The brief is queued and you land on `/generate/:jobId`, a live Agent Timeline showing Analyze → Story → Director → Prompt → Critic → Editor as each one runs. If Qwen is unavailable, generation fails without creating a mock project.
+3. The brief is queued and you land on `/projects/new/:jobId`, a live Agent Timeline showing Analyze → Story → Director → Prompt → Critic → Editor as each one runs. If Qwen is unavailable, generation fails without creating a mock project.
 4. Once all six stages succeed, the page redirects to the saved project at `/projects/:id`.
 5. Click **Generate 5 Scene Videos** or generate an individual scene.
 6. The project page auto-refreshes scene and final-video status (shown as the Render/Stitch stages of the same timeline) while Wan jobs are in progress.

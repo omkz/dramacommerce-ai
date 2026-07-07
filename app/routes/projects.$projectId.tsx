@@ -45,7 +45,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Project not found", { status: 404 });
   }
 
-  return { ...project, maxVoiceOverChars: getMaxVoiceOverChars() };
+  return {
+    ...project,
+    maxVoiceOverChars: getMaxVoiceOverChars(),
+    renderResolution: getRenderResolutionLabel(project.showPlan.brief.aspectRatio),
+  };
+}
+
+function getRenderResolutionLabel(aspectRatio: string | undefined): string {
+  const baseResolution = process.env.WAN_VIDEO_RESOLUTION === "1080P" ? "1080P" : "720P";
+
+  if (aspectRatio === "1:1") {
+    return baseResolution === "1080P" ? "1080x1080" : "720x720";
+  }
+
+  if (aspectRatio === "16:9") {
+    return baseResolution === "1080P" ? "1920x1080" : "1280x720";
+  }
+
+  return baseResolution === "1080P" ? "1080x1920" : "720x1280";
 }
 
 // Wan renders every scene at a fixed WAN_VIDEO_DURATION regardless of the
@@ -673,7 +691,7 @@ export default function ProjectDetail() {
         <section className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="min-w-0 space-y-5">
             {result.analysis ? (
-              <ResultCard title="Product Analysis" eyebrow="Vision">
+              <ResultCard title="Product Analysis" eyebrow="Vision" collapsible>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <SmallItem label="Category" value={result.analysis.category} />
                   <SmallItem label="Colors" value={result.analysis.colors.join(", ")} />
@@ -790,6 +808,14 @@ export default function ProjectDetail() {
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-ash">
                       {scene.visual}
                     </p>
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-paper/10 pt-2 font-mono text-[10px] uppercase tracking-widest text-ash">
+                      <span>
+                        <span className="text-gold">Camera</span> {scene.camera}
+                      </span>
+                      <span>
+                        <span className="text-gold">Emotion</span> {scene.emotion}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -912,6 +938,19 @@ export default function ProjectDetail() {
               </div>
             </ResultCard>
 
+            <ResultCard title="Editing Timeline">
+              <ol className="space-y-3">
+                {result.timeline.map((item) => (
+                  <li
+                    key={item}
+                    className="rounded-sm border border-paper/10 bg-panel-raised p-4 font-mono text-sm text-bone/80"
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ol>
+            </ResultCard>
+
             <ResultCard title="Generated Videos" eyebrow="Render">
               <div className="space-y-4">
                 <Form method="post">
@@ -933,7 +972,7 @@ export default function ProjectDetail() {
                   </button>
                 </Form>
 
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2">
                   {result.storyboard.map((scene) => {
                     const videoJob = project.videoJobs?.find(
                       (job) => job.scene === scene.scene,
@@ -1044,19 +1083,6 @@ export default function ProjectDetail() {
               </div>
             </ResultCard>
 
-            <ResultCard title="Editing Timeline">
-              <ol className="space-y-3">
-                {result.timeline.map((item) => (
-                  <li
-                    key={item}
-                    className="rounded-sm border border-paper/10 bg-panel-raised p-4 font-mono text-sm text-bone/80"
-                  >
-                    {item}
-                  </li>
-                ))}
-              </ol>
-            </ResultCard>
-
             <ResultCard title="Social Caption" eyebrow="Press Release">
               <p className="leading-7 text-bone/80">{result.caption}</p>
               <p className="mt-4 font-display text-lg font-medium text-gold">
@@ -1129,6 +1155,12 @@ export default function ProjectDetail() {
                     <p className="mt-2 font-mono text-xs text-ash">
                       Last updated: {new Date(project.finalVideo.updatedAt).toLocaleString()}
                     </p>
+
+                    <div className="mt-3 grid grid-cols-3 gap-2 border-t border-paper/10 pt-3">
+                      <SmallStat label="Resolution" value={project.renderResolution} />
+                      <SmallStat label="Duration" value={result.brief.duration} />
+                      <SmallStat label="Scenes" value={String(result.storyboard.length)} />
+                    </div>
 
                     {isInFlightJobStatus(project.finalVideo.status) ? (
                       <p className="mt-2 text-sm text-ash">
@@ -1241,31 +1273,55 @@ function ResultCard({
   title,
   eyebrow,
   accent = false,
+  collapsible = false,
   children,
 }: {
   title: string;
   eyebrow?: string;
   accent?: boolean;
+  collapsible?: boolean;
   children: ReactNode;
 }) {
-  return (
-    <section
-      className={
-        accent
-          ? "rounded-lg border border-gold/25 bg-panel p-6"
-          : "rounded-lg border border-paper/10 bg-panel p-6"
-      }
-    >
+  const className = accent
+    ? "rounded-lg border border-gold/25 bg-panel p-6"
+    : "rounded-lg border border-paper/10 bg-panel p-6";
+
+  const header = (
+    <>
       {eyebrow ? (
         <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-gold">
           {eyebrow}
         </p>
       ) : null}
-      <h2 className="mt-1 font-display text-xl font-medium text-bone">
+      <h2 className="mt-1 inline font-display text-xl font-medium text-bone">
         {title}
       </h2>
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <details className={className}>
+        <summary className="cursor-pointer">{header}</summary>
+        <div className="mt-4">{children}</div>
+      </details>
+    );
+  }
+
+  return (
+    <section className={className}>
+      {header}
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+function SmallStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm border border-paper/10 bg-panel p-2 text-center">
+      <p className="font-mono text-[9px] uppercase tracking-widest text-ash">{label}</p>
+      <p className="mt-1 text-xs font-semibold text-bone">{value}</p>
+    </div>
   );
 }
 
@@ -1311,10 +1367,10 @@ function getVideoFrameClassName(
           ? "max-w-[380px]"
           : "max-w-[300px]"
       : aspectRatio === "1:1"
-        ? "max-w-[320px]"
+        ? "max-w-[380px]"
         : aspectRatio === "16:9"
-          ? "max-w-[360px]"
-          : "max-w-[260px]";
+          ? "max-w-[440px]"
+          : "max-w-[320px]";
 
   return `mx-auto ${aspectClass} w-full ${maxWidth} overflow-hidden rounded-md bg-black`;
 }

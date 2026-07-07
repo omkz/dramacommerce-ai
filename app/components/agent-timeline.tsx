@@ -37,7 +37,7 @@ export const AGENT_TIMELINE_STAGES = [
   {
     key: "stitch",
     label: "Stitch",
-    description: "ffmpeg joins the five clips into one final ad.",
+    description: "ffmpeg joins the five clips into one final video.",
   },
 ] as const;
 

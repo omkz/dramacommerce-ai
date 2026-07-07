@@ -53,7 +53,7 @@ export function meta() {
     { title: "Generate Product Drama | DramaCommerce AI" },
     {
       name: "description",
-      content: "Generate a short product drama ad from one product photo.",
+      content: "Generate a short product drama video from one product photo.",
     },
   ];
 }
@@ -263,7 +263,7 @@ export default function Generate() {
             </p>
 
             <h1 className="mt-4 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
-              Create a product drama ad
+              Create a product drama video
             </h1>
 
             <p className="mt-4 max-w-xl text-ash">
@@ -538,7 +538,7 @@ export default function Generate() {
                 disabled={isGenerating}
                 className="w-full rounded-sm bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
               >
-                {isGenerating ? "Queuing generation..." : "Generate Product Ad"}
+                {isGenerating ? "Queuing generation..." : "Generate Product Video"}
               </button>
 
               {isGenerating ? (

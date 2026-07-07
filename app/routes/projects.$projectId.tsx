@@ -489,7 +489,7 @@ export function meta() {
     { title: "Generated Project | DramaCommerce AI" },
     {
       name: "description",
-      content: "Generated product drama ad plan.",
+      content: "Generated product drama video plan.",
     },
   ];
 }
@@ -553,7 +553,7 @@ export default function ProjectDetail() {
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-paper/10 pb-4">
           <Link to="/projects/new" className="text-sm text-ash hover:text-bone">
-            ← Create another ad
+            ← Create another video
           </Link>
 
           <div className="flex flex-wrap items-center gap-4">
@@ -590,7 +590,7 @@ export default function ProjectDetail() {
 
         <section className="mt-10">
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
-            Product Ad Project
+            Product Video Project
           </p>
 
           <h1 className="mt-4 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
@@ -1138,11 +1138,11 @@ export default function ProjectDetail() {
               </p>
             </div>
 
-            <ResultCard title="Final Product Drama Ad" eyebrow="Output" accent>
+            <ResultCard title="Final Product Drama Video" eyebrow="Output" accent>
               <div className="space-y-4">
                 <p className="text-sm leading-6 text-ash">
                   Once all 5 scene videos succeed, stitch them into one
-                  downloadable ad ready for TikTok, Reels, or Shorts.
+                  downloadable video ready for TikTok, Reels, or Shorts.
                 </p>
 
                 {isFinalVideoStale ? (
@@ -1205,10 +1205,10 @@ export default function ProjectDetail() {
                         className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
                       >
                         {isStitchingFinalVideo
-                          ? "Queuing final ad..."
+                          ? "Queuing final video..."
                           : project.finalVideo
-                            ? "Re-stitch Final Ad"
-                            : "Stitch Final Ad"}
+                            ? "Re-stitch Final Video"
+                            : "Stitch Final Video"}
                       </button>
                     </Form>
                   ) : (
@@ -1220,10 +1220,10 @@ export default function ProjectDetail() {
                   {project.finalVideo?.status === "SUCCEEDED" && project.finalVideo.videoUrl ? (
                     <a
                       href={project.finalVideo.videoUrl}
-                      download={`${slugify(result.brief.productName)}-drama-ad.mp4`}
+                      download={`${slugify(result.brief.productName)}-drama-video.mp4`}
                       className="rounded border border-paper/15 px-5 py-3 font-semibold text-bone transition hover:bg-paper/10"
                     >
-                      Download Final Ad
+                      Download Final Video
                     </a>
                   ) : null}
                 </div>

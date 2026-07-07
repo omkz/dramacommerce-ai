@@ -1,6 +1,6 @@
 # DramaCommerce AI
 
-DramaCommerce AI is an AI showrunner for short product drama ads. A merchant uploads one product image and a short brief, then the app analyzes the photo, generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene narrated video clip using Qwen/Wan/DashScope TTS on Alibaba Cloud, stitched into one final drama ad with ffmpeg.
+DramaCommerce AI is an AI showrunner for short product drama videos. A merchant uploads one product image and a short brief, then the app analyzes the photo, generates a story concept, hook, voice-over, storyboard, video prompts, editing timeline, and a full 5-scene narrated video clip using Qwen/Wan/DashScope TTS on Alibaba Cloud, stitched into one final drama video with ffmpeg.
 
 The multimodal orchestration path is: image → product analysis → script → storyboard → video prompts → Wan video clips → TTS voice-over → ffmpeg final edit.
 
@@ -66,7 +66,7 @@ pnpm run worker:video
 
 The video worker shells out to `ffmpeg` to stitch the 5 scene clips into a final video, so it must be installed locally (e.g. `apt-get install ffmpeg`, `brew install ffmpeg`) — the Docker image already includes it.
 
-> **Without these running, both "Generate Product Ad" and "Generate 5 Scene Videos" clicks stay stuck forever.**
+> **Without these running, both "Generate Product Video" and "Generate 5 Scene Videos" clicks stay stuck forever.**
 > The web app only enqueues Redis/BullMQ jobs; separate `worker:showrunner`
 > and `worker:video` processes are what actually call Qwen/Wan and update
 > job status. This is three processes by design (see
@@ -177,7 +177,7 @@ docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacom
 4. Once all six stages succeed, the page redirects to the saved project at `/projects/:id`.
 5. Click **Generate 5 Scene Videos** or generate an individual scene.
 6. The project page auto-refreshes scene and final-video status (shown as the Render/Stitch stages of the same timeline) while Wan jobs are in progress.
-7. Once all scene videos succeed, click **Stitch Final Ad** to create the downloadable product drama ad.
+7. Once all scene videos succeed, click **Stitch Final Video** to create the downloadable product drama video.
 
 ## Deployment Notes
 

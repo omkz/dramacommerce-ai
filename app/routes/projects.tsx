@@ -21,7 +21,7 @@ export function meta() {
     { title: "Projects | DramaCommerce AI" },
     {
       name: "description",
-      content: "View generated product drama ad projects.",
+      content: "View generated product drama video projects.",
     },
   ];
 }
@@ -39,11 +39,11 @@ export default function ProjectsIndex() {
             </p>
 
             <h1 className="mt-3 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
-              Product Drama Ads
+              Product Drama Videos
             </h1>
 
             <p className="mt-4 max-w-2xl text-ash">
-              Every product ad your account has generated, ready to review,
+              Every product video your account has generated, ready to review,
               render, stitch, or reuse.
             </p>
           </div>
@@ -52,7 +52,7 @@ export default function ProjectsIndex() {
             to="/projects/new"
             className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
-            Create Product Ad
+            Create Product Video
           </Link>
         </div>
 
@@ -65,14 +65,14 @@ export default function ProjectsIndex() {
               No productions yet
             </h2>
             <p className="mt-3 text-ash">
-              Generate your first product drama ad plan.
+              Generate your first product drama video plan.
             </p>
 
             <Link
               to="/projects/new"
               className="mt-6 inline-flex rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
             >
-              Create Product Ad
+              Create Product Video
             </Link>
           </section>
         ) : (

@@ -17,7 +17,7 @@ export function meta() {
     { title: "DramaCommerce AI" },
     {
       name: "description",
-      content: "Turn product photos into short drama ads with AI.",
+      content: "Turn product photos into short product drama videos with AI.",
     },
   ];
 }
@@ -36,7 +36,7 @@ const takes = [
   {
     take: "03",
     title: "Wan shoots every scene",
-    body: "Each scene renders as video, gets a voice-over and product packshot, then stitches into one finished ad.",
+    body: "Each scene renders as video, gets a voice-over and product packshot, then stitches into one finished video.",
   },
 ];
 
@@ -60,7 +60,7 @@ export default function Home() {
 
         <p className="mt-6 max-w-xl text-lg leading-8 text-ash">
           DramaCommerce AI writes the story, storyboards the shots, and shoots
-          the footage — turning a single product photo and brief into a short drama ad
+          the footage — turning a single product photo and brief into a short product drama video
           ready for TikTok, Reels, or Shorts.
         </p>
 
@@ -69,7 +69,7 @@ export default function Home() {
             href="/projects/new"
             className="rounded bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
           >
-            Create Product Ad
+            Create Product Video
           </a>
 
           <a
@@ -118,7 +118,7 @@ export default function Home() {
           </p>
 
           <h2 className="mt-3 font-display text-3xl font-medium text-bone md:text-4xl">
-            Three takes to a finished ad
+            Three takes to a finished video
           </h2>
 
           <div className="mt-12 grid gap-px overflow-hidden rounded-lg border border-paper/10 bg-paper/10 md:grid-cols-3">

@@ -22,7 +22,7 @@ export function meta() {
     { title: "Dashboard | DramaCommerce AI" },
     {
       name: "description",
-      content: "Production dashboard for product drama ad projects.",
+      content: "Production dashboard for product drama video projects.",
     },
   ];
 }
@@ -44,11 +44,11 @@ export default function Dashboard() {
             </p>
 
             <h1 className="mt-3 font-display text-4xl font-medium tracking-tight text-bone md:text-5xl">
-              Product ad studio
+              Product video studio
             </h1>
 
             <p className="mt-4 max-w-2xl text-ash">
-              Monitor generated product ads, render progress, final cuts, and
+              Monitor generated product videos, render progress, final cuts, and
               projects that need attention.
             </p>
           </div>
@@ -58,7 +58,7 @@ export default function Dashboard() {
               to="/projects/new"
               className="rounded bg-flame px-5 py-3 font-semibold text-bone transition hover:bg-flame/90"
             >
-              Create Product Ad
+              Create Product Video
             </Link>
             <Link
               to="/projects"
@@ -70,8 +70,8 @@ export default function Dashboard() {
         </div>
 
         <section className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Projects" value={String(stats.totalProjects)} detail="Saved ad plans" />
-          <MetricCard label="Final Ads" value={String(stats.finalVideosReady)} detail="Ready to download" />
+          <MetricCard label="Projects" value={String(stats.totalProjects)} detail="Saved video plans" />
+          <MetricCard label="Final Videos" value={String(stats.finalVideosReady)} detail="Ready to download" />
           <MetricCard label="Scene Renders" value={`${stats.scenesSucceeded}/${stats.scenesTotal}`} detail="Successful clips" />
           <MetricCard label="Needs Attention" value={String(stats.failedScenes + stats.failedFinalVideos)} detail="Failed render/stitch jobs" tone={stats.failedScenes + stats.failedFinalVideos > 0 ? "alert" : "normal"} />
         </section>
@@ -88,8 +88,8 @@ export default function Dashboard() {
               ) : (
                 <EmptyState
                   title="No projects yet"
-                  body="Create your first product drama ad to populate the dashboard."
-                  actionLabel="Create Product Ad"
+                  body="Create your first product drama video to populate the dashboard."
+                  actionLabel="Create Product Video"
                   actionTo="/projects/new"
                 />
               )}

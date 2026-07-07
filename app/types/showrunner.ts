@@ -10,9 +10,7 @@ export type ProductBrief = {
   aspectRatio?: "9:16" | "1:1" | "16:9";
   imageName: string;
   imageUrl?: string;
-  // Optional so old stored projects without this field still parse —
-  // treat undefined as true (overlay was always on before this existed).
-  showProductOverlay?: boolean;
+  showProductOverlay: boolean;
   // auto: use Analyze Agent recommendation; force: merchant intentionally
   // treats the upload as a clean packshot; disable: text-to-video only.
   productReferenceMode?: "auto" | "force" | "disable";
@@ -99,7 +97,7 @@ export type EditorPackage = {
 export type ShowPlan = {
   source: "qwen" | "mock";
   brief: ProductBrief;
-  analysis?: ProductAnalysis;
+  analysis: ProductAnalysis;
   concept: string;
   hook: string;
   voiceOver: string;
@@ -107,6 +105,5 @@ export type ShowPlan = {
   timeline: string[];
   caption: string;
   cta: string;
-  // Optional so projects saved before this tracking existed still parse fine.
-  tokenUsage?: AgentTokenUsage[];
+  tokenUsage: AgentTokenUsage[];
 };

@@ -283,7 +283,7 @@ async function narrateAndMuxScene(
     // opted out of the overlay entirely (showOverlay === false).
     let finalPath = muxedOutputPath;
 
-    if (productImageUrl && !useProductReference && showOverlay !== false) {
+    if (productImageUrl && !useProductReference && showOverlay) {
       try {
         const productImagePath = path.join(
           tempDir,

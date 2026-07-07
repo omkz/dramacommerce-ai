@@ -7,7 +7,7 @@ export type VideoCreateJobData = {
   voiceOver: string;
   productImageUrl?: string;
   useProductReference?: boolean;
-  showOverlay?: boolean;
+  showOverlay: boolean;
   aspectRatio?: "9:16" | "1:1" | "16:9";
 };
 

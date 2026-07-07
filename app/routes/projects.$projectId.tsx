@@ -142,7 +142,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           user.id,
           project.showPlan.brief.imageUrl,
           scene,
-          project.showPlan.brief.showProductOverlay !== false,
+          project.showPlan.brief.showProductOverlay,
           project.showPlan.brief.aspectRatio,
         );
       } catch (error) {
@@ -256,7 +256,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         user.id,
         project.showPlan.brief.imageUrl,
         scene,
-        project.showPlan.brief.showProductOverlay !== false,
+        project.showPlan.brief.showProductOverlay,
         project.showPlan.brief.aspectRatio,
         promptOverride || undefined,
         voiceOverOverride || undefined,
@@ -632,7 +632,7 @@ export default function ProjectDetail() {
             />
           </ResultCard>
 
-          {result.tokenUsage && result.tokenUsage.length > 0 ? (
+          {result.tokenUsage.length > 0 ? (
             <ResultCard title="Token Usage" eyebrow="Cost">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-left text-sm">
@@ -690,37 +690,35 @@ export default function ProjectDetail() {
 
         <section className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="min-w-0 space-y-5">
-            {result.analysis ? (
-              <ResultCard title="Product Analysis" eyebrow="Vision" collapsible>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <SmallItem label="Category" value={result.analysis.category} />
-                  <SmallItem label="Colors" value={result.analysis.colors.join(", ")} />
-                  <SmallItem label="Material" value={result.analysis.material} />
-                  <SmallItem
-                    label="Branding"
-                    value={result.analysis.brandingVisible || "None visible"}
-                  />
-                  <SmallItem
-                    label="Photo Quality"
-                    value={
-                      result.analysis.quality.charAt(0).toUpperCase() +
-                      result.analysis.quality.slice(1)
-                    }
-                  />
-                  <SmallItem
-                    label="Product Reference"
-                    value={result.analysis.canUseAsReference ? "Usable" : "Not usable"}
-                  />
-                </div>
+            <ResultCard title="Product Analysis" eyebrow="Vision" collapsible>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <SmallItem label="Category" value={result.analysis.category} />
+                <SmallItem label="Colors" value={result.analysis.colors.join(", ")} />
+                <SmallItem label="Material" value={result.analysis.material} />
+                <SmallItem
+                  label="Branding"
+                  value={result.analysis.brandingVisible || "None visible"}
+                />
+                <SmallItem
+                  label="Photo Quality"
+                  value={
+                    result.analysis.quality.charAt(0).toUpperCase() +
+                    result.analysis.quality.slice(1)
+                  }
+                />
+                <SmallItem
+                  label="Product Reference"
+                  value={result.analysis.canUseAsReference ? "Usable" : "Not usable"}
+                />
+              </div>
 
-                {result.analysis.issues.length > 0 ? (
-                  <p className="mt-4 text-sm leading-6 text-ash">
-                    <span className="font-semibold text-bone">Issues noted: </span>
-                    {result.analysis.issues.join(", ")}
-                  </p>
-                ) : null}
-              </ResultCard>
-            ) : null}
+              {result.analysis.issues.length > 0 ? (
+                <p className="mt-4 text-sm leading-6 text-ash">
+                  <span className="font-semibold text-bone">Issues noted: </span>
+                  {result.analysis.issues.join(", ")}
+                </p>
+              ) : null}
+            </ResultCard>
 
             <ResultCard title="Story & Voice-over" eyebrow="Editing">
               <Form method="post" className="space-y-4">

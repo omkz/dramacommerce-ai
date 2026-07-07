@@ -43,7 +43,9 @@ Return JSON:
 }
 
 Check for:
-- Pacing that fits the story bible's constraints.duration and builds from hook to CTA without dead scenes.
+- Scenes must be in beat order setup, tension, turning_point, climax, resolution — flag if out of order.
+- Each scene's actual content (title/visual/videoPrompt) must substantively embody its assigned beat, not just carry the right label on a flat, sample-shot sequence: setup should establish storyCore.conflict visually, tension should hold the problem without resolving it yet, turning_point is where the product visibly enters, climax should read as the most dynamic/transformative shot of the five, resolution should read as calm and resolved. If a scene's beat label doesn't match what it's actually depicting, that's a defect — flag it in notes.
+- Pacing that fits the story bible's constraints.duration and builds dramatically (rising and resolving), not just from hook to CTA with generic filler in between.
 - Generic or repetitive scenes that don't say anything specific about the product.
 - Each scene's videoPrompt actually matches its title/visual description.
 - useProductReference: true is only set on a scene whose videoPrompt describes a shot that could plausibly start from a static product photo (typically a hero/reveal shot). If a scene has useProductReference: true but its videoPrompt describes unrelated action, environment, or a different subject (e.g. a close-up of pavement, a person walking), that is a real defect — the actual product photo will be forced as that scene's first frame and produce broken video. Flag it in notes.

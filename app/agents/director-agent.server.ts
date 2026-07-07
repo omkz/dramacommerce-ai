@@ -39,13 +39,19 @@ Return JSON:
       "voiceOver": "string",
       "camera": "string, e.g. close-up / wide shot / tracking shot / macro",
       "emotion": "string, the feeling this scene should land, e.g. curious / surprised / relieved",
+      "beat": "setup" | "tension" | "turning_point" | "climax" | "resolution",
       "useProductReference": boolean
     }
   ]
 }
 
 Rules:
-- Create exactly 5 scenes.
+- Create exactly 5 scenes, and assign "beat" in exactly this order — scene 1 = "setup", scene 2 = "tension", scene 3 = "turning_point", scene 4 = "climax", scene 5 = "resolution". This is a real dramatic arc, not a label: it must actually structure the 5 scenes, built around storyCore.conflict —
+  1. setup: establish the conflict visually (the problem/frustration from storyCore.conflict, before the product appears).
+  2. tension: the conflict continues or intensifies — still no resolution in sight.
+  3. turning_point: the product enters the story here — this is the moment things start to change.
+  4. climax: the peak transformation moment — the conflict visibly resolving, the emotional payoff.
+  5. resolution: the resolved state, product clearly shown, setting up the CTA.
 - Make the pacing fit the story bible's constraints.duration.
 - Include concrete shots, motion, product placement, and emotional beats.
 - Show the product's key selling points visually where possible, using only details supported by the story bible's productFacts.

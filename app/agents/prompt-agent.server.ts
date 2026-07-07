@@ -70,6 +70,7 @@ Return JSON:
       "voiceOver": "string",
       "camera": "string",
       "emotion": "string",
+      "beat": "setup" | "tension" | "turning_point" | "climax" | "resolution",
       "useProductReference": boolean,
       "videoPrompt": "string"
     }
@@ -77,8 +78,9 @@ Return JSON:
 }
 
 Rules:
-- Preserve scene numbers, titles, durations, visuals, voice-over lines, camera, emotion, and useProductReference from the directed scenes.
+- Preserve scene numbers, titles, durations, visuals, voice-over lines, camera, emotion, beat, and useProductReference from the directed scenes.
 - Add detailed videoPrompt text for realistic text-to-video generation, tailored to the exact resolution/aspect ratio/duration from get_wan_video_constraints.
+- Let the shot's energy follow its beat: setup/tension read quieter and more static (stillness, held frames); turning_point introduces motion/change; climax is the most dynamic and energetic framing of the five; resolution settles back down, calm and clear.
 - Include camera movement, subject, setting, lighting, mood, and product visibility.
 - Make product appearance and benefits clear in the shot language, but avoid inventing unsupported logos, packaging, colors, or materials.
 - Avoid impossible product/logo details not present in the brief.

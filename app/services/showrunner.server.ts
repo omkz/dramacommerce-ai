@@ -82,6 +82,7 @@ export async function generateShowPlan(
         brief,
         analysis,
         concept: story.concept,
+        conflict: story.conflict,
         hook: story.hook,
         voiceOver: story.voiceOver,
         storyboard,

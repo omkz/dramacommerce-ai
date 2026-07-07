@@ -24,9 +24,18 @@ const criticResultSchema = z.object({
 
 const storyPackageSchema = z.object({
   concept: z.string(),
+  conflict: z.string(),
   hook: z.string(),
   voiceOver: z.string(),
 });
+
+const dramaticBeatSchema = z.enum([
+  "setup",
+  "tension",
+  "turning_point",
+  "climax",
+  "resolution",
+]);
 
 const directedSceneSchema = z.object({
   scene: z.number(),
@@ -36,6 +45,7 @@ const directedSceneSchema = z.object({
   voiceOver: z.string(),
   camera: z.string(),
   emotion: z.string(),
+  beat: dramaticBeatSchema,
   useProductReference: z.boolean(),
 });
 

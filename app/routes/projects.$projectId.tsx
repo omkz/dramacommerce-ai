@@ -28,7 +28,7 @@ import {
   checkVideoCreateRateLimit,
   checkVideoStitchRateLimit,
 } from "~/services/rate-limit.server";
-import type { AgentTokenUsage, StoryboardScene } from "~/types/showrunner";
+import type { AgentTokenUsage, DramaticBeat, StoryboardScene } from "~/types/showrunner";
 import { AgentTimeline, type TimelineStageState } from "~/components/agent-timeline";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -162,16 +162,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (intent === "edit-story") {
     const concept = String(formData.get("concept") || "").trim();
+    const conflict = String(formData.get("conflict") || "").trim();
     const hook = String(formData.get("hook") || "").trim();
     const voiceOver = String(formData.get("voiceOver") || "").trim();
 
-    if (!concept || !hook || !voiceOver) {
-      return { error: "Concept, hook, and voice-over can't be empty." };
+    if (!concept || !conflict || !hook || !voiceOver) {
+      return { error: "Concept, conflict, hook, and voice-over can't be empty." };
     }
 
     await updateShowPlan(projectId, user.id, {
       ...project.showPlan,
       concept,
+      conflict,
       hook,
       voiceOver,
     });
@@ -742,6 +744,22 @@ export default function ProjectDetail() {
 
                 <div>
                   <label
+                    htmlFor="conflict"
+                    className="block font-mono text-[11px] uppercase tracking-widest text-ash"
+                  >
+                    Conflict
+                  </label>
+                  <textarea
+                    id="conflict"
+                    name="conflict"
+                    defaultValue={result.conflict}
+                    rows={2}
+                    className="mt-2 w-full resize-y rounded-sm border border-paper/10 bg-ink p-3 text-sm leading-6 text-bone/80 outline-none focus:border-gold/50"
+                  />
+                </div>
+
+                <div>
+                  <label
                     htmlFor="hook"
                     className="block font-mono text-[11px] uppercase tracking-widest text-ash"
                   >
@@ -792,6 +810,9 @@ export default function ProjectDetail() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-gold/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
                         Scene {String(scene.scene).padStart(2, "0")}
+                      </span>
+                      <span className="rounded-full border border-flame/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-flame">
+                        {getBeatLabel(scene.beat)}
                       </span>
                       {scene.useProductReference ? (
                         <span className="rounded-full border border-gold/30 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-gold">
@@ -1338,6 +1359,14 @@ function getProductReferenceModeLabel(mode: string | undefined): string {
   if (mode === "force") return "Use as packshot";
   if (mode === "disable") return "Disabled";
   return "Auto";
+}
+
+function getBeatLabel(beat: DramaticBeat): string {
+  if (beat === "turning_point") return "Turning Point";
+  if (beat === "climax") return "Climax";
+  if (beat === "resolution") return "Resolution";
+  if (beat === "tension") return "Rising Tension";
+  return "Setup";
 }
 
 function getAspectRatioLabel(aspectRatio: string | undefined): string {

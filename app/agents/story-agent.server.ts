@@ -32,11 +32,13 @@ ${formatSkillResult("Brand Voice Skill", brandVoice)}
 Return JSON:
 {
   "concept": "string",
+  "conflict": "string",
   "hook": "string",
   "voiceOver": "string"
 }
 
 Rules:
+- "conflict" is the concrete obstacle or tension the product resolves — a specific, relatable problem the target audience actually has (e.g. "her skin looks dull and tired every morning no matter what she tries"), not a vague wish like "she wants to look better." This is the dramatic engine the rest of the storyboard is built around, so it needs something real to establish and resolve.
 - Make the story relevant to the target audience.
 - Follow the custom skill guidance when choosing the main selling angle, objection, CTA, and voice.
 - Use the product description and key selling points as the reason the product matters in the drama.

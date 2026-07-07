@@ -28,9 +28,21 @@ export type ProductAnalysis = {
 
 export type StoryPackage = {
   concept: string;
+  // The concrete obstacle/tension the product resolves — the dramatic
+  // engine the rest of the pipeline (Director's scene 1 setup, Editor's
+  // caption) references, instead of jumping straight to ad copy.
+  conflict: string;
   hook: string;
   voiceOver: string;
 };
+
+// A fixed 5-scene format maps 1:1 onto a 5-beat dramatic arc.
+export type DramaticBeat =
+  | "setup"
+  | "tension"
+  | "turning_point"
+  | "climax"
+  | "resolution";
 
 export type DirectedScene = {
   scene: number;
@@ -40,6 +52,7 @@ export type DirectedScene = {
   voiceOver: string;
   camera: string;
   emotion: string;
+  beat: DramaticBeat;
   useProductReference: boolean;
 };
 
@@ -72,6 +85,7 @@ export type StoryBible = {
   };
   storyCore: {
     concept: string;
+    conflict: string;
     hook: string;
     voiceOver: string;
   };
@@ -99,6 +113,7 @@ export type ShowPlan = {
   brief: ProductBrief;
   analysis: ProductAnalysis;
   concept: string;
+  conflict: string;
   hook: string;
   voiceOver: string;
   storyboard: StoryboardScene[];

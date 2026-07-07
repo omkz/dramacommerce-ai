@@ -30,6 +30,7 @@ export function buildStoryBible(
     },
     storyCore: {
       concept: story.concept,
+      conflict: story.conflict,
       hook: story.hook,
       voiceOver: story.voiceOver,
     },

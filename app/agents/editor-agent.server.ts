@@ -33,6 +33,7 @@ Rules:
 - Timeline should be actionable for editing: scene timing, cuts, overlays, subtitles, sound/music notes.
 - Caption should fit visualStyle.platform.
 - Open or riff on storyCore.hook in the caption, don't just repeat the storyboard beats.
+- Acknowledge storyCore.conflict (the problem the product resolves) before the payoff, so the caption reads as a resolved story, not a flat feature list.
 - Caption and CTA should mention the strongest product benefit or offer from productFacts when provided.
 - CTA should be short and merchant-friendly.
 `,

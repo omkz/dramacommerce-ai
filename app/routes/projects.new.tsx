@@ -491,14 +491,13 @@ export default function Generate() {
                     <input
                       type="checkbox"
                       name="showProductOverlay"
-                      defaultChecked
                       className="mt-1 h-4 w-4 shrink-0 accent-flame"
                     />
                     <span>
                       Show the product photo as a small overlay on scenes
                       that don't already use it as a reference frame.
-                      Turn off if you'd rather let generated scenes stand
-                      on their own.
+                      Off by default — turn on if you'd like every scene to
+                      carry a visible product thumbnail.
                     </span>
                   </label>
 

@@ -50,6 +50,13 @@
       "when": 1783052941316,
       "tag": "0006_old_zarek",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783786738768,
+      "tag": "0007_motionless_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

@@ -119,7 +119,7 @@ pnpm run start
 ```
 
 - `pnpm dev` starts the React Router dev server.
-- `pnpm run worker:showrunner` runs the Analyze/Story/Director/Prompt/Critic/Editor agent pipeline as a background job (via `tsx`, importing the app's own agent code directly rather than duplicating it).
+- `pnpm run worker:showrunner` runs the Analyze/Story/Director/Prompt/Critic/Editor agent pipeline as a background job (via `tsx`, importing the app's own agent code directly rather than duplicating it). In production this same source is instead run pre-compiled — see [Docker](#docker).
 - `pnpm run worker:video` processes Redis/BullMQ Wan video jobs.
 - `pnpm run db:migrate` applies Drizzle migrations to Postgres.
 - `pnpm run db:generate` generates a new Drizzle migration after schema changes.
@@ -166,8 +166,10 @@ docker build -t dramacommerce-ai .
 docker run --rm --env-file .env dramacommerce-ai pnpm run db:migrate
 docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 dramacommerce-ai
 docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce-ai pnpm run worker:video
-docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacommerce-ai pnpm run worker:showrunner
+docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacommerce-ai pnpm run start:worker
 ```
+
+`pnpm run start:worker` runs the showrunner worker from a standalone JS bundle (`build/worker/showrunner-worker.mjs`) produced at image build time by `pnpm run build:worker` (esbuild, bundling `scripts/showrunner-worker.mts` and its `~/services`/`~/agents` imports into one file with `node_modules` packages left external). It needs no TypeScript, no `~/*` path aliases, and no copy of `app/`/`tsconfig.json` at runtime — only the production image's `node_modules` and the compiled bundle. Local development still uses `pnpm run worker:showrunner` (via `tsx`, importing the TS source directly) for fast iteration.
 
 ## Product Flow
 

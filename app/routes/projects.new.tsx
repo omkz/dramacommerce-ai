@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
-import { Form, redirect, useActionData, useNavigation } from "react-router";
+import {
+  Form,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+} from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { createShowrunnerJob } from "~/services/project-store.server";
 import { enqueueShowrunnerGenerateJob } from "~/services/showrunner-queue.server";
+import {
+  checkUsageQuota,
+  getBillingSummary,
+  recordUsageEvent,
+} from "~/services/billing.server";
 import {
   assertValidProductImage,
   deleteUploadedFile,
@@ -59,9 +70,9 @@ export function meta() {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  await requireUser(request);
+  const user = await requireUser(request);
 
-  return null;
+  return { billing: await getBillingSummary(user.id) };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -116,6 +127,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return { error: rateLimitResult.message };
   }
 
+  const quotaResult = await checkUsageQuota(user.id, "showrunner_generation");
+
+  if (!quotaResult.allowed) {
+    return { error: quotaResult.message };
+  }
+
   const uploadedImage = await saveUploadedImage(productImage);
 
   const brief = {
@@ -141,6 +158,11 @@ export async function action({ request }: ActionFunctionArgs) {
     await enqueueShowrunnerGenerateJob({
       showrunnerJobId,
       userId: user.id,
+    });
+    await recordUsageEvent({
+      userId: user.id,
+      eventType: "showrunner_generation",
+      sourceId: showrunnerJobId,
     });
   } catch (error) {
     console.error("Failed to queue show plan generation:", error);
@@ -238,6 +260,7 @@ function getUploadErrorMessage(error: unknown): string {
 }
 
 export default function Generate() {
+  const { billing } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isGenerating = navigation.state !== "idle";
@@ -557,6 +580,33 @@ export default function Generate() {
           </section>
 
           <aside className="space-y-5">
+            <div className="rounded-lg border border-paper/10 bg-panel p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
+                    Plan
+                  </p>
+                  <h2 className="mt-3 font-display text-xl font-medium text-bone">
+                    {billing.plan.name}
+                  </h2>
+                </div>
+                <a
+                  href="/billing"
+                  className="rounded border border-paper/15 px-3 py-1.5 text-sm font-semibold text-bone transition hover:bg-paper/10"
+                >
+                  Billing
+                </a>
+              </div>
+
+              <p className="mt-4 text-sm leading-6 text-ash">
+                Showrunner usage this month:{" "}
+                <span className="font-mono text-bone">
+                  {billing.usage.showrunnerGenerations}/
+                  {billing.plan.quota.showrunnerGenerations}
+                </span>
+              </p>
+            </div>
+
             <div className="rounded-lg border border-paper/10 bg-panel p-6">
               <p className="font-mono text-xs uppercase tracking-[0.3em] text-gold">
                 Pipeline

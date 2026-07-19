@@ -8,6 +8,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { ProductBrief, ShowPlan } from "~/types/showrunner";
 import { SHOWRUNNER_JOB_STATUSES } from "~/types/showrunner-status";
@@ -22,6 +23,27 @@ export const showrunnerJobStatusEnum = pgEnum(
   "showrunner_job_status",
   SHOWRUNNER_JOB_STATUSES,
 );
+
+export const subscriptionPlanEnum = pgEnum("subscription_plan", [
+  "free",
+  "pro",
+  "studio",
+]);
+
+export const subscriptionStatusEnum = pgEnum("subscription_status", [
+  "trialing",
+  "active",
+  "past_due",
+  "paused",
+  "canceled",
+  "expired",
+]);
+
+export const usageEventTypeEnum = pgEnum("usage_event_type", [
+  "showrunner_generation",
+  "scene_render",
+  "final_stitch",
+]);
 
 // Auth.js's DrizzleAdapter creates users without passing an id, so the
 // schema itself must generate one (unlike `projects.id`, which the app sets).
@@ -68,6 +90,63 @@ export const sessions = pgTable("sessions", {
     .references(() => users.id, { onDelete: "cascade" }),
   expires: timestamp("expires", { withTimezone: true }).notNull(),
 });
+
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("manual"),
+    providerCustomerId: text("provider_customer_id"),
+    providerSubscriptionId: text("provider_subscription_id"),
+    plan: subscriptionPlanEnum("plan").notNull(),
+    status: subscriptionStatusEnum("status").notNull(),
+    currentPeriodStart: timestamp("current_period_start", {
+      withTimezone: true,
+    }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("subscriptions_user_id_idx").on(table.userId),
+    uniqueIndex("subscriptions_provider_subscription_id_idx").on(
+      table.providerSubscriptionId,
+    ),
+  ],
+);
+
+export const usageEvents = pgTable(
+  "usage_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventType: usageEventTypeEnum("event_type").notNull(),
+    units: integer("units").notNull().default(1),
+    sourceId: text("source_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("usage_events_user_id_created_at_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    index("usage_events_user_type_created_at_idx").on(
+      table.userId,
+      table.eventType,
+      table.createdAt,
+    ),
+  ],
+);
 
 export const verificationTokens = pgTable(
   "verification_tokens",

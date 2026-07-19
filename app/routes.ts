@@ -4,6 +4,7 @@ export default [
   layout("routes/app-layout.tsx", [
     index("routes/home.tsx"),
     route("dashboard", "routes/dashboard.tsx"),
+    route("billing", "routes/billing.tsx"),
     route("projects", "routes/projects.tsx"),
     route("projects/new", "routes/projects.new.tsx"),
     route("projects/new/:jobId", "routes/projects.new.$jobId.tsx"),

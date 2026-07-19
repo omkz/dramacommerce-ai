@@ -28,6 +28,11 @@ import {
   checkVideoCreateRateLimit,
   checkVideoStitchRateLimit,
 } from "~/services/rate-limit.server";
+import {
+  checkUsageQuota,
+  getBillingSummary,
+  recordUsageEvent,
+} from "~/services/billing.server";
 import type { AgentTokenUsage, DramaticBeat, StoryboardScene } from "~/types/showrunner";
 import { AgentTimeline, type TimelineStageState } from "~/components/agent-timeline";
 
@@ -47,6 +52,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return {
     ...project,
+    billing: await getBillingSummary(user.id),
     maxVoiceOverChars: getMaxVoiceOverChars(),
     renderResolution: getRenderResolutionLabel(project.showPlan.brief.aspectRatio),
   };
@@ -124,6 +130,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return redirect(`/projects/${projectId}`);
     }
 
+    const quotaResult = await checkUsageQuota(
+      user.id,
+      "scene_render",
+      scenesToCreate.length,
+    );
+
+    if (!quotaResult.allowed) {
+      return { error: quotaResult.message };
+    }
+
     const rateLimitResult = await checkVideoCreateRateLimit(
       user.id,
       scenesToCreate.length,
@@ -149,6 +165,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
         console.error(`Failed to enqueue video job for scene ${scene.scene}:`, error);
         failures.push(scene.scene);
       }
+    }
+
+    if (scenesToCreate.length > failures.length) {
+      await recordUsageEvent({
+        userId: user.id,
+        eventType: "scene_render",
+        units: scenesToCreate.length - failures.length,
+        sourceId: projectId,
+      });
     }
 
     if (failures.length > 0) {
@@ -202,6 +227,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return { error: rateLimitResult.message };
     }
 
+    const quotaResult = await checkUsageQuota(user.id, "final_stitch");
+
+    if (!quotaResult.allowed) {
+      return { error: quotaResult.message };
+    }
+
     try {
       const queueJobId = await enqueueVideoStitchJob({ projectId });
       const now = new Date().toISOString();
@@ -211,6 +242,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
         queueJobId,
         createdAt: now,
         updatedAt: now,
+      });
+
+      await recordUsageEvent({
+        userId: user.id,
+        eventType: "final_stitch",
+        sourceId: projectId,
       });
 
       return redirect(`/projects/${projectId}`);
@@ -241,6 +278,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return { error: rateLimitResult.message };
     }
 
+    const quotaResult = await checkUsageQuota(user.id, "scene_render");
+
+    if (!quotaResult.allowed) {
+      return { error: quotaResult.message, scene: sceneNumber };
+    }
+
     const promptOverride = String(formData.get("prompt") || "").trim();
     const voiceOverOverride = String(formData.get("voiceOver") || "").trim();
     const maxVoiceOverChars = getMaxVoiceOverChars();
@@ -263,6 +306,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
         promptOverride || undefined,
         voiceOverOverride || undefined,
       );
+
+      await recordUsageEvent({
+        userId: user.id,
+        eventType: "scene_render",
+        sourceId: `${projectId}:${scene.scene}`,
+      });
 
       return redirect(`/projects/${projectId}`);
     } catch (error) {

@@ -31,6 +31,11 @@ export default function AppLayout() {
               label="Projects"
               active={isActivePath(location.pathname, "/projects")}
             />
+            <SidebarLink
+              to="/billing"
+              label="Billing"
+              active={isActivePath(location.pathname, "/billing")}
+            />
           </nav>
 
           <div className="border-t border-paper/10 p-4">
@@ -71,6 +76,11 @@ export default function AppLayout() {
               to="/projects"
               label="Projects"
               active={isActivePath(location.pathname, "/projects")}
+            />
+            <MobileNavLink
+              to="/billing"
+              label="Billing"
+              active={isActivePath(location.pathname, "/billing")}
             />
           </nav>
         </header>

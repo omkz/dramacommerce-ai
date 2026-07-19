@@ -2,13 +2,17 @@ import { Queue, Worker } from "bullmq";
 import pg from "pg";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm, writeFile, copyFile, readFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import {
+  saveGeneratedFile,
+  readManagedAsDataUrl,
+  downloadToPath,
+} from "./lib/media-storage.mjs";
 
 const execFileAsync = promisify(execFile);
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
 const VIDEO_QUEUE_NAME = "video-generation";
 const POLL_DELAY_MS = Number(process.env.VIDEO_WORKER_POLL_DELAY_MS || "30000");
@@ -124,7 +128,7 @@ async function createWanTask({
 }) {
   const imgDataUrl =
     useProductReference && productImageUrl
-      ? await readLocalImageAsDataUrl(productImageUrl)
+      ? await readManagedAsDataUrl(productImageUrl)
       : null;
   const task = await createWanTextToVideoTask(prompt, imgDataUrl, aspectRatio);
   const now = new Date().toISOString();
@@ -301,10 +305,11 @@ async function narrateAndMuxScene(
       }
     }
 
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    await copyFile(finalPath, path.join(UPLOAD_DIR, outputFilename));
-
-    return `/uploads/${outputFilename}`;
+    return await saveGeneratedFile(finalPath, {
+      category: "scene-videos",
+      projectId,
+      extension: ".mp4",
+    });
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -454,12 +459,15 @@ async function stitchFinalVideo({ projectId }) {
 
     await runFfmpegConcat(listPath, tempOutputPath);
 
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    await copyFile(tempOutputPath, path.join(UPLOAD_DIR, outputFilename));
+    const finalVideoKey = await saveGeneratedFile(tempOutputPath, {
+      category: "final-videos",
+      projectId,
+      extension: ".mp4",
+    });
 
     await updateFinalVideo(projectId, {
       status: "SUCCEEDED",
-      videoUrl: `/uploads/${outputFilename}`,
+      videoUrl: finalVideoKey,
     });
   } catch (error) {
     throw error;
@@ -483,30 +491,13 @@ async function updateFinalVideo(projectId, { status, videoUrl, errorMessage }) {
 }
 
 async function downloadFile(url, destPath) {
-  // Narrated scene clips are saved locally and referenced as "/uploads/..."
-  // (relative paths, meant for the browser to resolve against the app's own
-  // origin) rather than absolute URLs like Wan's — fetch() can't resolve a
-  // relative path with no base, so read those straight off disk instead.
-  // Same path-traversal guard as routes/uploads.$filename.tsx.
-  if (url.startsWith("/uploads/")) {
-    const filename = url.slice("/uploads/".length);
-
-    if (!filename || filename.includes("/") || filename.includes("..")) {
-      throw new Error(`Invalid upload path: ${url}`);
-    }
-
-    await copyFile(path.join(UPLOAD_DIR, filename), destPath);
-    return;
-  }
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Failed to download clip: ${response.status} ${response.statusText}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  await writeFile(destPath, Buffer.from(arrayBuffer));
+  // Scene/final clips are stored via the media storage abstraction (local
+  // disk or OSS, depending on MEDIA_STORAGE_DRIVER) and referenced by a
+  // storage key or legacy "/uploads/..." path rather than a fetchable URL —
+  // downloadToPath reads those straight from storage. Everything else
+  // (Wan clip URLs, TTS audio URLs) is a real external URL, downloaded with
+  // a timeout and a maximum size to bound worker memory/disk usage.
+  await downloadToPath(url, destPath);
 }
 
 async function runFfmpegConcat(listPath, outputPath) {
@@ -531,20 +522,6 @@ async function runFfmpegConcat(listPath, outputPath) {
       outputPath,
     ]);
   }
-}
-
-async function readLocalImageAsDataUrl(url) {
-  const filename = url.slice("/uploads/".length);
-
-  if (!filename || filename.includes("/") || filename.includes("..")) {
-    throw new Error(`Invalid upload path: ${url}`);
-  }
-
-  const buffer = await readFile(path.join(UPLOAD_DIR, filename));
-  const ext = path.extname(filename).toLowerCase();
-  const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
-
-  return `data:${mime};base64,${buffer.toString("base64")}`;
 }
 
 // wan2.1 (this app's default t2v/i2v models) predates Wan's newer

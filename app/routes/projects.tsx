@@ -1,7 +1,7 @@
 import { Link, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import {
-  listProjects,
+  listProjectsForDisplay,
   type SavedProject,
   type VideoGenerationJob,
 } from "~/services/project-store.server";
@@ -9,7 +9,7 @@ import { requireUser } from "~/services/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
-  const projects = await listProjects(user.id);
+  const projects = await listProjectsForDisplay(user.id);
 
   return {
     projects,

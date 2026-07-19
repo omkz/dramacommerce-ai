@@ -11,6 +11,7 @@ import {
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   getProject,
+  getProjectForDisplay,
   deleteProject,
   saveVideoJob,
   saveFinalVideo,
@@ -44,7 +45,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Project ID is required", { status: 400 });
   }
 
-  const project = await getProject(projectId, user.id);
+  const project = await getProjectForDisplay(projectId, user.id);
 
   if (!project) {
     throw new Response("Project not found", { status: 404 });

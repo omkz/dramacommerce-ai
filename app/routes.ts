@@ -11,7 +11,7 @@ export default [
     route("projects/:projectId", "routes/projects.$projectId.tsx"),
   ]),
   route("health", "routes/health.ts"),
-  route("uploads/:filename", "routes/uploads.$filename.tsx"),
+  route("uploads/*", "routes/uploads.$.tsx"),
   route("auth/*", "routes/auth.$.tsx"),
   route("login", "routes/login.tsx"),
 ] satisfies RouteConfig;

@@ -20,7 +20,7 @@ The multimodal orchestration path is: image → product analysis → script → 
 - Structured 5-scene storyboard and editing timeline
 - Postgres project and video job persistence
 - Redis/BullMQ background queue for showrunner generation and Wan video jobs
-- Local image storage in `uploads/`
+- Pluggable media storage: local disk (`uploads/`) for development, or Alibaba Cloud OSS for production — set via `MEDIA_STORAGE_DRIVER`
 - Wan text-to-video and image-to-video task creation for any or all 5 scenes
 - DashScope TTS voice-over synthesis muxed onto each scene clip
 - Worker-driven video task polling and video preview
@@ -80,6 +80,15 @@ The video worker shells out to `ffmpeg` to stitch the 5 scene clips into a final
 DATABASE_URL=postgresql://dramacommerce:dramacommerce@localhost:5432/dramacommerce
 REDIS_URL=redis://localhost:6379
 
+MEDIA_STORAGE_DRIVER=local
+OSS_REGION=oss-ap-southeast-1
+OSS_BUCKET=your-bucket-name
+OSS_ACCESS_KEY_ID=xxxxx
+OSS_ACCESS_KEY_SECRET=xxxxx
+OSS_ENDPOINT=
+OSS_PUBLIC_BASE_URL=
+OSS_SIGNED_URL_EXPIRES_SECONDS=3600
+
 DASHSCOPE_API_KEY=sk-xxxxx
 QWEN_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen-plus
@@ -96,6 +105,8 @@ DASHSCOPE_TTS_BASE_URL=https://YOUR_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.co
 DASHSCOPE_TTS_MODEL=qwen3-tts-flash
 DASHSCOPE_TTS_VOICE=Cherry
 ```
+
+`MEDIA_STORAGE_DRIVER=local` (default) stores product images, narrated scene clips, and stitched final videos under `uploads/` on local disk, served back through the `/uploads/*` route — the web app, showrunner worker, and video worker must then share that directory (e.g. a mounted volume) if they run as separate containers, since each only sees its own local filesystem otherwise. `MEDIA_STORAGE_DRIVER=oss` instead stores every generated/uploaded file in Alibaba Cloud OSS via the `OSS_*` vars, which every container reaches over the network — no shared volume needed, and the recommended mode for a multi-container production deployment. Objects are private by default and served through short-lived signed URLs generated per request (`OSS_SIGNED_URL_EXPIRES_SECONDS`, default 3600) — nothing extra to configure on the bucket. Set `OSS_PUBLIC_BASE_URL` only if the bucket is deliberately public-read (its own ACL/CDN setup) and you'd rather serve plain, non-expiring URLs than signed ones. See [Docker](#docker) for the shared-volume-vs-OSS tradeoff in a multi-container deployment.
 
 `QWEN_BASE_URL` includes `/compatible-mode/v1` because it is used for OpenAI-compatible chat completions. `QWEN_VISION_MODEL` reuses the same base URL/key for the Analyze Agent's image understanding call.
 
@@ -116,6 +127,7 @@ pnpm run db:generate
 pnpm run typecheck
 pnpm run build
 pnpm run start
+pnpm run test
 ```
 
 - `pnpm dev` starts the React Router dev server.
@@ -126,6 +138,7 @@ pnpm run start
 - `pnpm run typecheck` regenerates route types and runs TypeScript.
 - `pnpm run build` creates the production build.
 - `pnpm run start` serves the production build.
+- `pnpm run test` runs the media storage abstraction's unit tests (local + OSS drivers, against a fake OSS client).
 
 ## Architecture
 
@@ -171,6 +184,21 @@ docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacom
 
 `pnpm run start:worker` runs the showrunner worker from a standalone JS bundle (`build/worker/showrunner-worker.mjs`) produced at image build time by `pnpm run build:worker` (esbuild, bundling `scripts/showrunner-worker.mts` and its `~/services`/`~/agents` imports into one file with `node_modules` packages left external). It needs no TypeScript, no `~/*` path aliases, and no copy of `app/`/`tsconfig.json` at runtime — only the production image's `node_modules` and the compiled bundle. Local development still uses `pnpm run worker:showrunner` (via `tsx`, importing the TS source directly) for fast iteration.
 
+**These three containers do not share a filesystem by default**, which matters for media: the web app saves uploaded product images, the showrunner worker reads them back for the Analyze Agent's vision call, and the video worker saves narrated scene clips and the stitched final video that the web app then serves. With the default `MEDIA_STORAGE_DRIVER=local`, that only works if all three containers mount the *same* `uploads/` directory:
+
+```bash
+docker volume create dramacommerce-uploads
+
+docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 \
+  -v dramacommerce-uploads:/app/uploads dramacommerce-ai
+docker run -d --name dramacommerce-ai-video-worker --env-file .env \
+  -v dramacommerce-uploads:/app/uploads dramacommerce-ai pnpm run worker:video
+docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env \
+  -v dramacommerce-uploads:/app/uploads dramacommerce-ai pnpm run start:worker
+```
+
+On a single host (e.g. one ECS instance running all three containers, or `docker compose`) a shared named volume like this is enough. Across multiple hosts — or if you'd simply rather not manage a shared volume — set `MEDIA_STORAGE_DRIVER=oss` and the matching `OSS_*` vars instead: every container then reads/writes the same Alibaba Cloud OSS bucket over the network, no volume required, and it's the mode this app is built to run in without change. Forgetting either (no shared volume *and* `MEDIA_STORAGE_DRIVER=local`) is the single biggest cause of "the worker can't find the uploaded image" errors in a multi-container deployment.
+
 ## Product Flow
 
 1. Open `/projects/new`.
@@ -183,14 +211,14 @@ docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacom
 
 ## Deployment Notes
 
-Deploy the web app and video worker as separate container processes on Alibaba Cloud ECS. Use managed Postgres-compatible storage for `DATABASE_URL`, managed Redis/Tair for `REDIS_URL`, and persistent storage for `uploads/` until media is moved to Alibaba OSS.
+Deploy the web app, showrunner worker, and video worker as separate container processes on Alibaba Cloud ECS. Use managed Postgres-compatible storage for `DATABASE_URL` and managed Redis/Tair for `REDIS_URL`. For media, set `MEDIA_STORAGE_DRIVER=oss` with the `OSS_*` vars (recommended — no shared filesystem needed across containers/hosts) or provision persistent shared storage for `uploads/` if staying on `MEDIA_STORAGE_DRIVER=local` (see [Docker](#docker)).
 
 Production checklist:
 
-- Store `.env` as server-side secrets and never commit it.
+- Store `.env` as server-side secrets and never commit it — this includes `OSS_ACCESS_KEY_ID`/`OSS_ACCESS_KEY_SECRET` if using OSS.
 - Run `pnpm run db:migrate` before starting web or worker processes.
 - Put the web app behind HTTPS before using real merchant data.
 - Back up the Postgres database.
 - Configure log collection for Qwen, Wan, upload, worker, and storage errors.
-- Move uploaded product images and generated video assets to Alibaba OSS as usage grows.
-- Use `/health` for uptime checks; it returns `200` when Postgres, Redis, required environment variables, and `ffmpeg` are ready, and `503` when a dependency fails.
+- If using `MEDIA_STORAGE_DRIVER=oss`, switching an existing `local`-mode deployment over does not retroactively migrate already-uploaded files — old `/uploads/...` records keep working only as long as that deployment stays on `local` mode.
+- Use `/health` for uptime checks; it returns `200` when Postgres, Redis, required environment variables, `ffmpeg`, and storage (local directory writability, or OSS config + connectivity) are ready, and `503` when a dependency fails.

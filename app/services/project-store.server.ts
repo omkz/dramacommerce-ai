@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { finalVideos, projects, showrunnerJobs, videoJobs } from "~/db/schema";
 import { db } from "~/services/db.server";
+import { getMediaStorage } from "~/services/storage/media-storage.server";
 import type { ProductBrief, ShowPlan } from "~/types/showrunner";
 import {
   parseShowrunnerJobStatus,
@@ -189,6 +190,70 @@ export async function getProject(
   }
 
   return rowToProject(rows[0]);
+}
+
+// getProject/listProjects (above) return raw storage references (keys, or
+// legacy "/uploads/..." paths) — correct for deletion and for feeding the
+// Analyze Agent's storage read. Routes that render project data (img/video
+// src) should use these *ForDisplay variants instead, which resolve every
+// media reference to a browser-usable URL (a signed OSS URL when
+// MEDIA_STORAGE_DRIVER=oss) right before returning — never persisted.
+export async function getProjectForDisplay(
+  id: string,
+  userId: string,
+): Promise<SavedProject | null> {
+  const project = await getProject(id, userId);
+
+  return project ? resolveProjectMediaUrls(project) : null;
+}
+
+export async function listProjectsForDisplay(userId: string): Promise<SavedProject[]> {
+  const projectsList = await listProjects(userId);
+
+  return Promise.all(projectsList.map(resolveProjectMediaUrls));
+}
+
+async function resolveProjectMediaUrls(project: SavedProject): Promise<SavedProject> {
+  const storage = getMediaStorage();
+
+  const resolveRef = async (ref: string | undefined): Promise<string | undefined> => {
+    if (!ref) {
+      return undefined;
+    }
+
+    try {
+      return await storage.resolveUrl(ref);
+    } catch (error) {
+      console.error(`Failed to resolve media URL for ref "${ref}":`, error);
+      return undefined;
+    }
+  };
+
+  const [imageUrl, resolvedVideoJobs, finalVideoUrl] = await Promise.all([
+    resolveRef(project.showPlan.brief.imageUrl),
+    Promise.all(
+      (project.videoJobs ?? []).map(async (job) => ({
+        ...job,
+        videoUrl: await resolveRef(job.videoUrl),
+      })),
+    ),
+    resolveRef(project.finalVideo?.videoUrl),
+  ]);
+
+  return {
+    ...project,
+    showPlan: {
+      ...project.showPlan,
+      brief: {
+        ...project.showPlan.brief,
+        imageUrl,
+      },
+    },
+    videoJobs: resolvedVideoJobs,
+    finalVideo: project.finalVideo
+      ? { ...project.finalVideo, videoUrl: finalVideoUrl }
+      : undefined,
+  };
 }
 
 export async function deleteProject(

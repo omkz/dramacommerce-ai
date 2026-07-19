@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pool } from "~/services/db.server";
 import { getVideoQueue } from "~/services/video-queue.server";
+import { getMediaStorage } from "~/services/storage/media-storage.server";
 
 const execFileAsync = promisify(execFile);
 
@@ -12,14 +13,15 @@ type HealthCheck = {
 };
 
 export async function loader() {
-  const [database, redis, environment, ffmpeg] = await Promise.all([
+  const [database, redis, environment, ffmpeg, storage] = await Promise.all([
     checkDatabase(),
     checkRedis(),
     checkEnvironment(),
     checkFfmpeg(),
+    checkStorage(),
   ]);
 
-  const healthy = [database, redis, environment, ffmpeg].every(
+  const healthy = [database, redis, environment, ffmpeg, storage].every(
     (check) => check.status === "ok",
   );
 
@@ -31,6 +33,7 @@ export async function loader() {
         redis,
         environment,
         ffmpeg,
+        storage,
       },
       uptimeSeconds: Math.round(process.uptime()),
       checkedAt: new Date().toISOString(),
@@ -92,6 +95,9 @@ async function checkEnvironment(): Promise<HealthCheck> {
     "AUTH_SECRET",
     "AUTH_GOOGLE_ID",
     "AUTH_GOOGLE_SECRET",
+    ...(process.env.MEDIA_STORAGE_DRIVER === "oss"
+      ? ["OSS_REGION", "OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"]
+      : []),
   ];
   const missing = requiredEnv.filter((name) => !process.env[name]);
 
@@ -103,6 +109,31 @@ async function checkEnvironment(): Promise<HealthCheck> {
   }
 
   return { status: "ok" };
+}
+
+// Local mode: verifies the uploads/ directory is actually writable (not
+// just present) via a real write+delete probe. OSS mode: verifies required
+// config is present, then performs a lightweight connectivity check. Never
+// includes credentials in the response — the driver's healthCheck() already
+// returns a sanitized {status, message}.
+async function checkStorage(): Promise<HealthCheck> {
+  const startedAt = performance.now();
+
+  try {
+    const result = await getMediaStorage().healthCheck();
+
+    return {
+      status: result.status,
+      latencyMs: getLatency(startedAt),
+      message: result.message,
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      latencyMs: getLatency(startedAt),
+      message: getErrorMessage(error),
+    };
+  }
 }
 
 async function checkFfmpeg(): Promise<HealthCheck> {

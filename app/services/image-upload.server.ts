@@ -1,9 +1,6 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { fileTypeFromBuffer } from "file-type";
+import { getMediaStorage } from "~/services/storage/media-storage.server";
 
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -21,18 +18,19 @@ export async function saveUploadedImage(
   file: FormDataEntryValue | null,
 ): Promise<{ imageName: string; imageUrl?: string }> {
   const validatedImage = await getValidatedProductImage(file);
-
-  await mkdir(UPLOAD_DIR, { recursive: true });
-
   const extension = IMAGE_EXTENSIONS_BY_TYPE[validatedImage.mime] ?? ".jpg";
-  const filename = `${randomUUID()}${extension}`;
-  const filePath = path.join(UPLOAD_DIR, filename);
 
-  await writeFile(filePath, validatedImage.buffer);
+  const key = await getMediaStorage().saveBuffer(validatedImage.buffer, {
+    category: "product-images",
+    extension,
+  });
 
   return {
     imageName: validatedImage.file.name,
-    imageUrl: `/uploads/${filename}`,
+    // A storage reference (key), not a browser URL — resolved to one only
+    // when a route reads project data for display. See
+    // project-store.server.ts's *ForDisplay helpers.
+    imageUrl: key,
   };
 }
 
@@ -68,43 +66,21 @@ async function getValidatedProductImage(
 }
 
 export async function deleteUploadedFile(
-  url: string | null | undefined,
+  ref: string | null | undefined,
 ): Promise<void> {
-  const filePath = resolveUploadedFilePath(url);
-
-  if (!filePath) {
+  if (!ref) {
     return;
   }
 
-  await rm(filePath, { force: true });
+  await getMediaStorage().delete(ref);
 }
 
 export async function readUploadedImageAsDataUrl(
-  url: string | null | undefined,
+  ref: string | null | undefined,
 ): Promise<string> {
-  const filePath = resolveUploadedFilePath(url);
-
-  if (!filePath) {
-    throw new Error(`Invalid uploaded image path: ${url}`);
+  if (!ref) {
+    throw new Error(`Invalid uploaded image reference: ${ref}`);
   }
 
-  const buffer = await readFile(filePath);
-  const detectedType = await fileTypeFromBuffer(buffer);
-  const mime = detectedType?.mime ?? "image/jpeg";
-
-  return `data:${mime};base64,${buffer.toString("base64")}`;
-}
-
-function resolveUploadedFilePath(url: string | null | undefined): string | null {
-  if (!url || !url.startsWith("/uploads/")) {
-    return null;
-  }
-
-  const filename = url.slice("/uploads/".length);
-
-  if (!filename || filename.includes("/") || filename.includes("..")) {
-    return null;
-  }
-
-  return path.join(UPLOAD_DIR, filename);
+  return getMediaStorage().readAsDataUrl(ref);
 }

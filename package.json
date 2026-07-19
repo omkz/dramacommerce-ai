@@ -14,13 +14,15 @@
     "worker:showrunner": "tsx --env-file-if-exists=.env scripts/showrunner-worker.mts",
     "start": "react-router-serve ./build/server/index.js",
     "start:worker": "node build/worker/showrunner-worker.mjs",
-    "typecheck": "react-router typegen && tsc"
+    "typecheck": "react-router typegen && tsc",
+    "test": "tsx --test app/services/storage/*.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.34.3",
     "@auth/drizzle-adapter": "^1.11.2",
     "@react-router/node": "8.0.0",
     "@react-router/serve": "8.0.0",
+    "ali-oss": "^6.23.0",
     "bullmq": "^5.79.2",
     "drizzle-orm": "^0.45.2",
     "file-type": "^22.0.1",
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@react-router/dev": "8.0.0",
     "@tailwindcss/vite": "^4.2.2",
+    "@types/ali-oss": "^6.16.11",
     "@types/node": "^22",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",

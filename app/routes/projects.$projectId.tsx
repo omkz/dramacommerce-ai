@@ -14,16 +14,13 @@ import {
   getProjectForDisplay,
   deleteProject,
   saveVideoJob,
-  saveFinalVideo,
+  createVideoGenerationWithOutbox,
+  createStitchGenerationWithOutbox,
   updateShowPlan,
   type SavedProject,
 } from "~/services/project-store.server";
 import { queryWanVideoTask } from "~/services/wan-video.server";
 import { deleteUploadedFile } from "~/services/image-upload.server";
-import {
-  enqueueVideoCreateJob,
-  enqueueVideoStitchJob,
-} from "~/services/video-queue.server";
 import { requireUser } from "~/services/auth.server";
 import {
   checkVideoCreateRateLimit,
@@ -151,35 +148,39 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     const failures: number[] = [];
+    let createdCount = 0;
 
     for (const scene of scenesToCreate) {
       try {
-        await createVideoJobForScene(
+        const { created } = await createVideoJobForScene(
           projectId,
-          user.id,
           project.showPlan.brief.imageUrl,
           scene,
           project.showPlan.brief.showProductOverlay,
           project.showPlan.brief.aspectRatio,
         );
+
+        if (created) {
+          createdCount += 1;
+        }
       } catch (error) {
-        console.error(`Failed to enqueue video job for scene ${scene.scene}:`, error);
+        console.error(`Failed to create video job for scene ${scene.scene}:`, error);
         failures.push(scene.scene);
       }
     }
 
-    if (scenesToCreate.length > failures.length) {
+    if (createdCount > 0) {
       await recordUsageEvent({
         userId: user.id,
         eventType: "scene_render",
-        units: scenesToCreate.length - failures.length,
+        units: createdCount,
         sourceId: projectId,
       });
     }
 
     if (failures.length > 0) {
       return {
-        error: `Unable to queue video for scene(s) ${failures.join(", ")}. Check Redis/BullMQ configuration and try again.`,
+        error: `Unable to queue video for scene(s) ${failures.join(", ")}. Try again.`,
       };
     }
 
@@ -235,29 +236,27 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     try {
-      const queueJobId = await enqueueVideoStitchJob({ projectId });
-      const now = new Date().toISOString();
+      // Idempotent: a duplicate "Stitch Final Video" click while a stitch
+      // is already active for this project is a no-op (created: false) —
+      // the video_jobs upsert and outbox event insert commit atomically in
+      // the same transaction, so a stitch generation is never persisted
+      // without a corresponding queue message on the way.
+      const { created } = await createStitchGenerationWithOutbox(projectId);
 
-      await saveFinalVideo(projectId, user.id, {
-        status: "QUEUED",
-        queueJobId,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      await recordUsageEvent({
-        userId: user.id,
-        eventType: "final_stitch",
-        sourceId: projectId,
-      });
+      if (created) {
+        await recordUsageEvent({
+          userId: user.id,
+          eventType: "final_stitch",
+          sourceId: projectId,
+        });
+      }
 
       return redirect(`/projects/${projectId}`);
     } catch (error) {
-      console.error("Failed to enqueue stitch job:", error);
+      console.error("Failed to create stitch job:", error);
 
       return {
-        error:
-          "Unable to queue the final video. Check Redis/BullMQ configuration and try again.",
+        error: "Unable to queue the final video. Try again.",
       };
     }
   }
@@ -297,9 +296,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     try {
-      await createVideoJobForScene(
+      const { created } = await createVideoJobForScene(
         projectId,
-        user.id,
         project.showPlan.brief.imageUrl,
         scene,
         project.showPlan.brief.showProductOverlay,
@@ -308,19 +306,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
         voiceOverOverride || undefined,
       );
 
-      await recordUsageEvent({
-        userId: user.id,
-        eventType: "scene_render",
-        sourceId: `${projectId}:${scene.scene}`,
-      });
+      if (created) {
+        await recordUsageEvent({
+          userId: user.id,
+          eventType: "scene_render",
+          sourceId: `${projectId}:${scene.scene}`,
+        });
+      }
 
       return redirect(`/projects/${projectId}`);
     } catch (error) {
-      console.error("Failed to enqueue video job:", error);
+      console.error("Failed to create video job:", error);
 
       return {
-        error:
-          "Unable to queue the video job. Check Redis/BullMQ configuration and try again.",
+        error: "Unable to queue the video job. Try again.",
         scene: sceneNumber,
       };
     }
@@ -414,20 +413,22 @@ export async function action({ request, params }: ActionFunctionArgs) {
   throw new Response("Invalid intent", { status: 400 });
 }
 
+// Idempotent: a duplicate "Generate Scene"/"Generate All" click for a scene
+// that already has an active (queued/running) generation is a no-op
+// (created: false) — see project-store.server.ts#createVideoGenerationWithOutbox.
 async function createVideoJobForScene(
   projectId: string,
-  userId: string,
   productImageUrl: string | undefined,
   scene: StoryboardScene,
   showOverlay: boolean,
   aspectRatio: SavedProject["showPlan"]["brief"]["aspectRatio"],
   promptOverride?: string,
   voiceOverOverride?: string,
-): Promise<SavedProject> {
+): Promise<{ created: boolean }> {
   const prompt = promptOverride || scene.videoPrompt;
   const voiceOver = voiceOverOverride || scene.voiceOver;
 
-  const queueJobId = await enqueueVideoCreateJob({
+  const { created } = await createVideoGenerationWithOutbox({
     projectId,
     scene: scene.scene,
     prompt,
@@ -438,21 +439,7 @@ async function createVideoJobForScene(
     aspectRatio,
   });
 
-  const now = new Date().toISOString();
-
-  return saveVideoJob(projectId, userId, {
-    scene: scene.scene,
-    provider: "wan",
-    queueJobId,
-    status: "QUEUED",
-    prompt,
-    voiceOver,
-    useProductReference: scene.useProductReference,
-    attempts: 0,
-    nextPollAt: new Date(Date.now() + 30_000).toISOString(),
-    createdAt: now,
-    updatedAt: now,
-  });
+  return { created };
 }
 
 function getNextVideoPollAt(status: string): string | undefined {

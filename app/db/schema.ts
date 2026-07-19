@@ -45,6 +45,12 @@ export const usageEventTypeEnum = pgEnum("usage_event_type", [
   "final_stitch",
 ]);
 
+export const outboxEventStatusEnum = pgEnum("outbox_event_status", [
+  "PENDING",
+  "DELIVERED",
+  "FAILED",
+]);
+
 // Auth.js's DrizzleAdapter creates users without passing an id, so the
 // schema itself must generate one (unlike `projects.id`, which the app sets).
 export const users = pgTable("users", {
@@ -182,6 +188,12 @@ export const videoJobs = pgTable(
     queueJobId: text("queue_job_id"),
     taskId: text("task_id"),
     status: videoGenerationStatusEnum("status").notNull(),
+    // Minted fresh server-side each time a *new* generation is started
+    // (initial render or explicit regenerate) — lets the worker detect and
+    // ignore a stale queued/poll job that arrived after the scene was
+    // regenerated again. See services/project-store.server.ts and
+    // scripts/video-worker.mjs.
+    generationId: text("generation_id").notNull(),
     prompt: text("prompt").notNull(),
     voiceOver: text("voice_over"),
     useProductReference: boolean("use_product_reference").notNull().default(false),
@@ -227,6 +239,50 @@ export const finalVideos = pgTable("final_videos", {
   videoUrl: text("video_url"),
   errorMessage: text("error_message"),
   queueJobId: text("queue_job_id"),
+  // Same purpose as video_jobs.generation_id, one level up — lets the
+  // stitch worker detect and ignore a stale stitch job superseded by a
+  // newer re-stitch request. Nullable because rows created before this
+  // column existed have no meaningful value (and are always terminal).
+  stitchGenerationId: text("stitch_generation_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+// Transactional outbox: HTTP routes/services insert a row here in the same
+// Postgres transaction as the domain-state write (showrunner_jobs/
+// video_jobs/final_videos), instead of calling BullMQ directly. A separate
+// dispatcher process (scripts/outbox-dispatcher.mts) is the only thing that
+// ever calls queue.add(), using job_key as BullMQ's deterministic jobId —
+// so a crash between "BullMQ accepted the job" and "marked delivered" is
+// safe to retry: the dispatcher just calls add() again with the same
+// jobId, which BullMQ no-ops against the job it already created.
+export const outboxEvents = pgTable(
+  "outbox_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    queue: text("queue").notNull(),
+    jobName: text("job_name").notNull(),
+    // Deterministic per logical operation, e.g.
+    // "video-create_<projectId>_<scene>_<generationId>" — doubles as the
+    // BullMQ jobId, hence "_" rather than ":" as the delimiter: BullMQ
+    // rejects custom job IDs containing ":" (its own internal Redis key
+    // delimiter). Unique so a duplicate insert attempt for the same
+    // logical operation (belt-and-suspenders alongside the
+    // upsert-with-WHERE checks in project-store.server.ts) is a no-op.
+    jobKey: text("job_key").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: outboxEventStatusEnum("status").notNull().default("PENDING"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("outbox_events_job_key_idx").on(table.jobKey),
+    index("outbox_events_status_available_at_idx").on(table.status, table.availableAt),
+  ],
+);

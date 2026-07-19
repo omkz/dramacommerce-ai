@@ -8,7 +8,7 @@ import { generateShowPlan } from "~/services/showrunner.server";
 import { getQwenErrorMessage } from "~/services/qwen.server";
 import {
   getShowrunnerJob,
-  saveProject,
+  saveProjectAndCompleteShowrunnerJob,
   updateShowrunnerJob,
 } from "~/services/project-store.server";
 import { deleteUploadedFile } from "~/services/image-upload.server";
@@ -71,16 +71,26 @@ async function runShowrunnerJob(
     throw new Error(`Showrunner job ${showrunnerJobId} not found.`);
   }
 
+  // A deterministic BullMQ jobId (see showrunner-queue.server.ts) already
+  // makes a duplicate *publish* of this job a no-op, but BullMQ can still
+  // redeliver the same job at-least-once after a stalled/crashed worker —
+  // if the first attempt already finished, exit immediately rather than
+  // re-running the whole Qwen pipeline and (absent this check) creating a
+  // second project for the same job.
+  if (job.status === "SUCCEEDED") {
+    console.log(
+      `Showrunner job ${showrunnerJobId} already SUCCEEDED (projectId ${job.projectId}) — skipping duplicate delivery.`,
+    );
+    return;
+  }
+
   const showPlan = await generateShowPlan(job.brief, async (stage) => {
     await updateShowrunnerJob(showrunnerJobId, { status: stage });
   });
 
-  const project = await saveProject(showPlan, userId);
-
-  await updateShowrunnerJob(showrunnerJobId, {
-    status: "SUCCEEDED",
-    projectId: project.id,
-  });
+  // Project creation and the SUCCEEDED status update commit atomically —
+  // see project-store.server.ts#saveProjectAndCompleteShowrunnerJob.
+  await saveProjectAndCompleteShowrunnerJob(showrunnerJobId, showPlan, userId);
 }
 
 async function markShowrunnerJobFailed(

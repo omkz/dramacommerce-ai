@@ -17,6 +17,17 @@ const execFileAsync = promisify(execFile);
 const VIDEO_QUEUE_NAME = "video-generation";
 const POLL_DELAY_MS = Number(process.env.VIDEO_WORKER_POLL_DELAY_MS || "30000");
 const CONCURRENCY = Number(process.env.VIDEO_WORKER_CONCURRENCY || "2");
+// If a worker crashes after flipping a scene to RUNNING but before ever
+// calling Wan (or before persisting task_id), that row is stuck RUNNING
+// forever with no way to distinguish it from "another attempt is
+// legitimately still in flight". Below this grace period, a retry for the
+// same generation is treated as a likely-duplicate-in-progress and skipped
+// (favoring "don't call Wan twice"); beyond it, the row is treated as
+// abandoned and the retry proceeds (favoring "don't get stuck forever").
+// See createWanTask's stale/duplicate-guard comment for the full tradeoff.
+const WAN_TASK_STALE_RUNNING_GRACE_MS = Number(
+  process.env.WAN_TASK_STALE_RUNNING_GRACE_MS || 5 * 60 * 1000,
+);
 
 const databaseUrl = process.env.DATABASE_URL;
 const redisUrl = process.env.REDIS_URL;
@@ -84,12 +95,17 @@ async function markFailedIfRetryExhausted(job, error) {
   const message = getWorkerFailureMessage(error);
 
   if (job.name === "video.create" || job.name === "video.poll") {
-    await updateVideoJobFailure(job.data.projectId, job.data.scene, message);
+    await updateVideoJobFailure(
+      job.data.projectId,
+      job.data.scene,
+      job.data.generationId,
+      message,
+    );
     return;
   }
 
   if (job.name === "video.stitch") {
-    await updateFinalVideo(job.data.projectId, {
+    await updateFinalVideo(job.data.projectId, job.data.stitchGenerationId, {
       status: "FAILED",
       errorMessage: message,
     });
@@ -102,18 +118,71 @@ function willRetry(job) {
   return job.attemptsMade + 1 < maxAttempts;
 }
 
-async function updateVideoJobFailure(projectId, scene, errorMessage) {
-  await pool.query(
+// Scoped to generationId so an old job's exhausted retries can't mark a
+// *newer* generation (the user regenerated this scene while the stale job
+// was still retrying) as failed. Logs when that happens since it's a sign
+// the scene was regenerated mid-flight, not an error.
+async function updateVideoJobFailure(projectId, scene, generationId, errorMessage) {
+  const result = await pool.query(
     `
     UPDATE video_jobs
     SET status = $1,
         error_message = $2,
         next_poll_at = NULL,
         updated_at = $3
-    WHERE project_id = $4 AND scene = $5
+    WHERE project_id = $4 AND scene = $5 AND generation_id = $6
   `,
-    ["FAILED", errorMessage, new Date().toISOString(), projectId, scene],
+    ["FAILED", errorMessage, new Date().toISOString(), projectId, scene, generationId],
   );
+
+  if (result.rowCount === 0) {
+    console.log(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: retries exhausted for a superseded generation, not marking FAILED.`,
+    );
+  }
+}
+
+// Claims this generation for a Wan call by conditionally transitioning
+// QUEUED -> RUNNING scoped to generationId. This is the "before calling
+// Wan, confirm the row still has that generation ID" check from the design
+// doc, plus a bounded mitigation for the one gap that can't be closed
+// without provider-side idempotency keys: a worker crashing after this
+// transition but before task_id is saved leaves the row RUNNING with no
+// way to tell "another attempt is still genuinely in flight" apart from
+// "that attempt died and this retry should proceed". We resolve that
+// ambiguity with WAN_TASK_STALE_RUNNING_GRACE_MS — see its definition above.
+async function claimGenerationForWanCall(projectId, scene, generationId) {
+  const claimed = await pool.query(
+    `
+    UPDATE video_jobs
+    SET status = 'RUNNING', updated_at = $1
+    WHERE project_id = $2 AND scene = $3 AND generation_id = $4 AND status = 'QUEUED'
+  `,
+    [new Date().toISOString(), projectId, scene, generationId],
+  );
+
+  if (claimed.rowCount > 0) {
+    return "claimed";
+  }
+
+  const { rows } = await pool.query(
+    `SELECT status, updated_at FROM video_jobs WHERE project_id = $1 AND scene = $2 AND generation_id = $3`,
+    [projectId, scene, generationId],
+  );
+  const row = rows[0];
+
+  if (!row || row.status !== "RUNNING") {
+    // No row under this generation_id (superseded by a newer regenerate),
+    // or it's already terminal (a duplicate delivery of a job that already
+    // completed/failed) — either way, stale.
+    return "stale";
+  }
+
+  const runningForMs = Date.now() - new Date(row.updated_at).getTime();
+
+  return runningForMs < WAN_TASK_STALE_RUNNING_GRACE_MS
+    ? "likely-in-progress"
+    : "resumed-abandoned";
 }
 
 async function createWanTask({
@@ -125,7 +194,30 @@ async function createWanTask({
   useProductReference,
   showOverlay,
   aspectRatio,
+  generationId,
 }) {
+  const claim = await claimGenerationForWanCall(projectId, scene, generationId);
+
+  if (claim === "stale") {
+    console.log(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: generation superseded before the Wan call, skipping.`,
+    );
+    return;
+  }
+
+  if (claim === "likely-in-progress") {
+    console.warn(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: already RUNNING within the ${WAN_TASK_STALE_RUNNING_GRACE_MS}ms grace period — skipping to avoid a likely duplicate Wan task. If this generation is genuinely stuck (not actually in flight), it will be retried automatically once the grace period elapses.`,
+    );
+    return;
+  }
+
+  if (claim === "resumed-abandoned") {
+    console.warn(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: resuming a generation that has been RUNNING for over ${WAN_TASK_STALE_RUNNING_GRACE_MS}ms with no task_id saved — a duplicate Wan task is possible if the earlier attempt is still in flight server-side.`,
+    );
+  }
+
   const imgDataUrl =
     useProductReference && productImageUrl
       ? await readManagedAsDataUrl(productImageUrl)
@@ -134,7 +226,7 @@ async function createWanTask({
   const now = new Date().toISOString();
   const nextPollAt = new Date(Date.now() + POLL_DELAY_MS).toISOString();
 
-  await pool.query(
+  const result = await pool.query(
     `
     UPDATE video_jobs
     SET task_id = $1,
@@ -142,10 +234,25 @@ async function createWanTask({
         attempts = attempts + 1,
         next_poll_at = $3,
         updated_at = $4
-    WHERE project_id = $5 AND scene = $6
+    WHERE project_id = $5 AND scene = $6 AND generation_id = $7
+    RETURNING attempts
   `,
-    [task.taskId, task.status, nextPollAt, now, projectId, scene],
+    [task.taskId, task.status, nextPollAt, now, projectId, scene, generationId],
   );
+
+  if (result.rowCount === 0) {
+    // The scene was regenerated again in the narrow window between the Wan
+    // call above and this write. Wan was already asked to render task
+    // ${task.taskId} — there is no provider-side cancellation available, so
+    // that render completes and is billed regardless; this just avoids
+    // recording its result against a generation that's no longer current.
+    console.log(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: generation superseded between the Wan call and saving task_id (task ${task.taskId} discarded).`,
+    );
+    return;
+  }
+
+  const attempts = result.rows[0].attempts;
 
   await queue.add(
     "video.poll",
@@ -157,8 +264,14 @@ async function createWanTask({
       productImageUrl,
       useProductReference,
       showOverlay,
+      generationId,
     },
     {
+      // Deterministic per actual poll attempt (attempts increments each
+      // cycle) — cheap insurance against BullMQ-level redelivery. Not
+      // routed through the outbox: see the design note in CLAUDE.md on why
+      // poll self-rescheduling stays a direct queue.add() here.
+      jobId: `video-poll_${projectId}_${scene}_${task.taskId}_${attempts}`,
       delay: POLL_DELAY_MS,
       attempts: 10,
       backoff: { type: "fixed", delay: POLL_DELAY_MS },
@@ -166,6 +279,15 @@ async function createWanTask({
       removeOnFail: 500,
     },
   );
+}
+
+async function isGenerationCurrent(projectId, scene, generationId) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM video_jobs WHERE project_id = $1 AND scene = $2 AND generation_id = $3`,
+    [projectId, scene, generationId],
+  );
+
+  return rows.length > 0;
 }
 
 async function pollWanTask({
@@ -176,7 +298,19 @@ async function pollWanTask({
   productImageUrl,
   useProductReference,
   showOverlay,
+  generationId,
 }) {
+  // Cheap up-front check so a poll for an already-superseded generation
+  // doesn't pay for TTS synthesis / storage writes it's just going to
+  // discard below — the UPDATE's own generation_id match afterwards is the
+  // authoritative guard (a regenerate can still race in between).
+  if (!(await isGenerationCurrent(projectId, scene, generationId))) {
+    console.log(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: skipping poll, generation superseded.`,
+    );
+    return;
+  }
+
   const task = await queryWanVideoTask(taskId);
   const now = new Date().toISOString();
   const nextPollAt = getNextPollAt(task.status);
@@ -206,7 +340,11 @@ async function pollWanTask({
     }
   }
 
-  await pool.query(
+  // The authoritative staleness guard: only writes if generation_id still
+  // matches, so an old poll job can never overwrite a newer generation's
+  // state (requirement: "an old poll job must not overwrite a newer
+  // generation").
+  const result = await pool.query(
     `
     UPDATE video_jobs
     SET status = $1,
@@ -216,7 +354,8 @@ async function pollWanTask({
         last_polled_at = $4,
         next_poll_at = $5,
         updated_at = $6
-    WHERE project_id = $7 AND scene = $8
+    WHERE project_id = $7 AND scene = $8 AND generation_id = $9
+    RETURNING attempts
   `,
     [
       task.status,
@@ -227,14 +366,34 @@ async function pollWanTask({
       now,
       projectId,
       scene,
+      generationId,
     ],
   );
 
+  if (result.rowCount === 0) {
+    console.log(
+      `[stale] project=${projectId} scene=${scene} generationId=${generationId}: poll result discarded, generation superseded.`,
+    );
+    return;
+  }
+
   if (nextPollAt) {
+    const attempts = result.rows[0].attempts;
+
     await queue.add(
       "video.poll",
-      { projectId, scene, taskId, voiceOver, productImageUrl, useProductReference, showOverlay },
       {
+        projectId,
+        scene,
+        taskId,
+        voiceOver,
+        productImageUrl,
+        useProductReference,
+        showOverlay,
+        generationId,
+      },
+      {
+        jobId: `video-poll_${projectId}_${scene}_${taskId}_${attempts}`,
         delay: POLL_DELAY_MS,
         attempts: 10,
         backoff: { type: "fixed", delay: POLL_DELAY_MS },
@@ -409,13 +568,25 @@ async function synthesizeVoiceOver(text) {
   return audioUrl;
 }
 
-async function stitchFinalVideo({ projectId }) {
+async function stitchFinalVideo({ projectId, stitchGenerationId }) {
   const now = new Date().toISOString();
 
-  await pool.query(
-    `UPDATE final_videos SET status = $1, updated_at = $2 WHERE project_id = $3`,
-    ["RUNNING", now, projectId],
+  // Conditional claim, same shape as claimGenerationForWanCall: if this
+  // stitch has already been superseded by a newer re-stitch request (or
+  // this is a duplicate delivery of a stitch that already ran), skip
+  // entirely rather than clobbering RUNNING/terminal state that belongs to
+  // the current stitch generation.
+  const claimed = await pool.query(
+    `UPDATE final_videos SET status = $1, updated_at = $2 WHERE project_id = $3 AND stitch_generation_id = $4`,
+    ["RUNNING", now, projectId, stitchGenerationId],
   );
+
+  if (claimed.rowCount === 0) {
+    console.log(
+      `[stale] project=${projectId} stitchGenerationId=${stitchGenerationId}: stitch superseded before starting, skipping.`,
+    );
+    return;
+  }
 
   const { rows } = await pool.query(
     `SELECT scene, status, video_url FROM video_jobs WHERE project_id = $1 ORDER BY scene`,
@@ -425,7 +596,7 @@ async function stitchFinalVideo({ projectId }) {
   const missingOrFailed = rows.length < 5 || rows.some((row) => row.status !== "SUCCEEDED" || !row.video_url);
 
   if (missingOrFailed) {
-    await updateFinalVideo(projectId, {
+    await updateFinalVideo(projectId, stitchGenerationId, {
       status: "FAILED",
       errorMessage: "Not all 5 scenes have a successful video yet.",
     });
@@ -465,7 +636,7 @@ async function stitchFinalVideo({ projectId }) {
       extension: ".mp4",
     });
 
-    await updateFinalVideo(projectId, {
+    await updateFinalVideo(projectId, stitchGenerationId, {
       status: "SUCCEEDED",
       videoUrl: finalVideoKey,
     });
@@ -476,18 +647,27 @@ async function stitchFinalVideo({ projectId }) {
   }
 }
 
-async function updateFinalVideo(projectId, { status, videoUrl, errorMessage }) {
-  await pool.query(
+// Scoped to stitchGenerationId so a stale/duplicate stitch job can never
+// overwrite a newer re-stitch's state (same shape as updateVideoJobFailure
+// above, one level up).
+async function updateFinalVideo(projectId, stitchGenerationId, { status, videoUrl, errorMessage }) {
+  const result = await pool.query(
     `
     UPDATE final_videos
     SET status = $1,
         video_url = $2,
         error_message = $3,
         updated_at = $4
-    WHERE project_id = $5
+    WHERE project_id = $5 AND stitch_generation_id = $6
   `,
-    [status, videoUrl ?? null, errorMessage ?? null, new Date().toISOString(), projectId],
+    [status, videoUrl ?? null, errorMessage ?? null, new Date().toISOString(), projectId, stitchGenerationId],
   );
+
+  if (result.rowCount === 0) {
+    console.log(
+      `[stale] project=${projectId} stitchGenerationId=${stitchGenerationId}: stitch result discarded, superseded by a newer stitch.`,
+    );
+  }
 }
 
 async function downloadFile(url, destPath) {

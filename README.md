@@ -57,9 +57,10 @@ Health check endpoint:
 http://localhost:5173/health
 ```
 
-Run both workers in separate terminals — one for show plan generation, one for video:
+Run all three background processes in separate terminals — the outbox dispatcher, show plan generation, and video:
 
 ```bash
+pnpm run worker:outbox
 pnpm run worker:showrunner
 pnpm run worker:video
 ```
@@ -67,12 +68,15 @@ pnpm run worker:video
 The video worker shells out to `ffmpeg` to stitch the 5 scene clips into a final video, so it must be installed locally (e.g. `apt-get install ffmpeg`, `brew install ffmpeg`) — the Docker image already includes it.
 
 > **Without these running, both "Generate Product Video" and "Generate 5 Scene Videos" clicks stay stuck forever.**
-> The web app only enqueues Redis/BullMQ jobs; separate `worker:showrunner`
-> and `worker:video` processes are what actually call Qwen/Wan and update
-> job status. This is three processes by design (see
+> The web app never talks to Redis/BullMQ directly — form submissions write
+> a Postgres row plus a pending `outbox_events` row in one transaction.
+> `worker:outbox` is what actually publishes those to Redis/BullMQ;
+> `worker:showrunner` and `worker:video` are what pick the published jobs
+> up and call Qwen/Wan. This is four processes by design (see
 > [Deployment Notes](#deployment-notes)), not a bug — if generation looks
-> frozen, check whether the relevant worker is running before assuming the
-> provider itself is slow.
+> frozen, check whether the outbox dispatcher is running (`/health`'s
+> `outbox` check flags a stuck backlog) before assuming the provider itself
+> is slow.
 
 ## Environment Variables
 
@@ -120,6 +124,7 @@ DASHSCOPE_TTS_VOICE=Cherry
 
 ```bash
 pnpm dev
+pnpm run worker:outbox
 pnpm run worker:showrunner
 pnpm run worker:video
 pnpm run db:migrate
@@ -131,6 +136,7 @@ pnpm run test
 ```
 
 - `pnpm dev` starts the React Router dev server.
+- `pnpm run worker:outbox` runs the outbox dispatcher — the only process that publishes to Redis/BullMQ. Polls Postgres for pending `outbox_events` rows, claims each with `FOR UPDATE SKIP LOCKED` (safe to run multiple instances), and marks an event delivered only after BullMQ confirms the add. See [Reliability & Idempotency](#reliability--idempotency).
 - `pnpm run worker:showrunner` runs the Analyze/Story/Director/Prompt/Critic/Editor agent pipeline as a background job (via `tsx`, importing the app's own agent code directly rather than duplicating it). In production this same source is instead run pre-compiled — see [Docker](#docker).
 - `pnpm run worker:video` processes Redis/BullMQ Wan video jobs.
 - `pnpm run db:migrate` applies Drizzle migrations to Postgres.
@@ -138,7 +144,7 @@ pnpm run test
 - `pnpm run typecheck` regenerates route types and runs TypeScript.
 - `pnpm run build` creates the production build.
 - `pnpm run start` serves the production build.
-- `pnpm run test` runs the media storage abstraction's unit tests (local + OSS drivers, against a fake OSS client).
+- `pnpm run test` runs unit tests: the media storage abstraction (local + OSS drivers, against a fake OSS client) and the outbox/idempotency behavior (transactional rollback, dispatcher retry/locking, stale-generation guards, cleanup) against a real local Postgres.
 
 ## Architecture
 
@@ -147,11 +153,13 @@ User
   ↓
 React Router full-stack app
   ├─ /projects/new product brief form
+  │    └─ Postgres transaction: showrunner_jobs row + outbox_events row (commit atomically)
+  ├─ worker:outbox dispatcher → publishes to Redis/BullMQ (deterministic jobId)
   ├─ Redis/BullMQ showrunner queue → worker:showrunner (Analyze/Story/Director/Prompt/Critic/Editor agents)
   ├─ /projects/new/:jobId live Agent Timeline (polls showrunner_jobs status)
   ├─ Postgres project store
-  ├─ Redis/BullMQ video queue → worker:video (Render/Stitch)
-  ├─ local image uploads
+  ├─ worker:outbox dispatcher → Redis/BullMQ video queue → worker:video (Render/Stitch)
+  ├─ media storage (local disk or Alibaba Cloud OSS — MEDIA_STORAGE_DRIVER)
   └─ /projects/:id project detail
        ├─ Agent Timeline (Analyze…Editor always done, Render/Stitch live)
        ├─ storyboard + video prompts
@@ -160,7 +168,7 @@ React Router full-stack app
         Alibaba Cloud Model Studio / DashScope
 ```
 
-The showrunner flow is split into six Qwen-powered stages: Analyze Agent (vision), Story Agent, Director Agent, Prompt Agent, Critic Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects. `/projects/new`'s action no longer runs these stages inline — it creates a `showrunner_jobs` row and enqueues a job; `worker:showrunner` runs `generateShowPlan` stage by stage, writing status back after each stage so `/projects/new/:jobId` can show live progress. On success it saves the project and the job redirects there; on failure (retries exhausted) it records the error and cleans up the uploaded image, same as the old synchronous failure path.
+The showrunner flow is split into six Qwen-powered stages: Analyze Agent (vision), Story Agent, Director Agent, Prompt Agent, Critic Agent, and Editor Agent. Each stage returns structured JSON and validates it before the next stage runs. Qwen failures fail closed and do not create mock projects. `/projects/new`'s action no longer runs these stages inline, and no longer enqueues a BullMQ job directly either — it writes a `showrunner_jobs` row and a matching `outbox_events` row in one Postgres transaction (see [Reliability & Idempotency](#reliability--idempotency)); `worker:outbox` is what actually publishes to BullMQ. `worker:showrunner` runs `generateShowPlan` stage by stage, writing status back after each stage so `/projects/new/:jobId` can show live progress. On success it saves the project and marks the job SUCCEEDED in one transaction, and the job redirects there; on failure (retries exhausted) it records the error and cleans up the uploaded image, same as the old synchronous failure path.
 
 Right after the Story Agent completes, a compact **Story Bible** (product facts, visual style, story core, constraints) is built once and reused by every downstream agent instead of re-serializing the full brief/analysis/story objects into each prompt — the Director, Prompt, Critic, and Editor agents only need a handful of those fields, not all of them repeated five times. Every Qwen call also reports its token usage, aggregated per stage and shown on the project page so the pipeline's cost is a real number, not just a claim.
 
@@ -172,19 +180,37 @@ Wan video generation is queued the same way. The web app stores video job state 
 
 The shared `AgentTimeline` component (`app/components/agent-timeline.tsx`) renders all 8 stages (Analyze, Story, Director, Prompt, Critic, Editor, Render, Stitch) and is used on both `/projects/new/:jobId` (for the first 6, live, vertical layout) and `/projects/:id` (for all 8 — the first 6 always "done" since a project only exists once they succeed, Render/Stitch reflecting live `video_jobs`/`final_videos` state, rendered as a horizontal stepper in a full-width section).
 
+## Reliability & Idempotency
+
+HTTP routes never call BullMQ. Every "start work" action (showrunner generation, scene render, final stitch) writes its domain-state row (`showrunner_jobs`/`video_jobs`/`final_videos`) and a matching `outbox_events` row in **one Postgres transaction** — either both exist or neither does, so a Redis outage at submission time can never leave a database row with no corresponding queue message. `worker:outbox` is the only process that calls `queue.add()`, using each outbox event's `job_key` as BullMQ's deterministic `jobId` — publishing the same logical event twice (a dispatcher retry after an uncertain prior attempt) is a safe no-op, not a duplicate job.
+
+Duplicate HTTP submissions (double-click, browser back-button resubmit) are handled at the database layer, not just disabled buttons in the UI:
+
+- **Showrunner generation** — `/projects/new`'s loader mints an idempotency token embedded in a hidden form field; it becomes the `showrunner_jobs.id` itself, so a duplicate POST hits a primary-key conflict and is treated as a replay of the original submission instead of a new job.
+- **Scene generation / stitching** — `video_jobs`/`final_videos` gain a `generation_id`/`stitch_generation_id`, minted fresh only when a *new* generation actually starts. A single atomic `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE status NOT IN (active statuses)` means a duplicate click while a generation is already active is a no-op that returns the existing row; a deliberate regenerate after the previous one finished (terminal status) always proceeds with a fresh generation id.
+
+Every provider-call/state-write in the video worker is scoped to the `generation_id`/`stitch_generation_id` from its job payload via conditional `UPDATE ... WHERE ... AND generation_id = $x`, checking the affected row count. If a scene is regenerated while an older queued/polling job for it is still in flight, that older job's writes affect 0 rows — it logs, and exits successfully without calling Wan or touching the newer generation's state. The showrunner worker exits immediately (no Qwen calls, no second project) if a job's status is already `SUCCEEDED` when delivered again; project creation and the `SUCCEEDED` status update commit in one transaction so a worker crash between the two can't happen.
+
+**Known limitation:** a worker crashing *after* calling Wan but *before* saving the returned `task_id` cannot be made atomic with Postgres — BullMQ's at-least-once redelivery will retry and, with no record of the first task, may call Wan again. This is mitigated (not eliminated) by a conditional `QUEUED → RUNNING` transition before the Wan call: a fast retry finds the row already `RUNNING` and skips re-calling Wan by default; `WAN_TASK_STALE_RUNNING_GRACE_MS` (default 5 minutes) bounds how long a genuinely stuck job waits before a retry is allowed to proceed anyway. `video.poll` jobs are deliberately *not* routed through the outbox — they're a worker's own continuation of a job it already owns (self-rescheduled via BullMQ `delay`, same as before), and routing a 30-second polling loop through outbox-insert → dispatcher-pickup → publish would add latency for no correctness benefit; the same conditional-`UPDATE`-with-`generation_id` guard fully covers the "stale poll must not overwrite a newer generation" requirement regardless of how the poll job was enqueued.
+
+`outbox_events` retention is handled by the dispatcher itself (`OUTBOX_CLEANUP_INTERVAL_MS`): delivered events are deleted after `OUTBOX_DELIVERED_RETENTION_MS` (default 24h), permanently failed events after `OUTBOX_FAILED_RETENTION_MS` (default 14d) — see `.env.example`.
+
 ## Docker
 
 ```bash
 docker build -t dramacommerce-ai .
 docker run --rm --env-file .env dramacommerce-ai pnpm run db:migrate
 docker run -d --name dramacommerce-ai --env-file .env -p 3000:3000 dramacommerce-ai
+docker run -d --name dramacommerce-ai-outbox --env-file .env dramacommerce-ai pnpm run start:outbox
 docker run -d --name dramacommerce-ai-video-worker --env-file .env dramacommerce-ai pnpm run worker:video
 docker run -d --name dramacommerce-ai-showrunner-worker --env-file .env dramacommerce-ai pnpm run start:worker
 ```
 
-`pnpm run start:worker` runs the showrunner worker from a standalone JS bundle (`build/worker/showrunner-worker.mjs`) produced at image build time by `pnpm run build:worker` (esbuild, bundling `scripts/showrunner-worker.mts` and its `~/services`/`~/agents` imports into one file with `node_modules` packages left external). It needs no TypeScript, no `~/*` path aliases, and no copy of `app/`/`tsconfig.json` at runtime — only the production image's `node_modules` and the compiled bundle. Local development still uses `pnpm run worker:showrunner` (via `tsx`, importing the TS source directly) for fast iteration.
+`pnpm run start:worker`/`start:outbox` run the showrunner worker and outbox dispatcher from standalone JS bundles (`build/worker/showrunner-worker.mjs`, `build/worker/outbox-dispatcher.mjs`) produced at image build time by `pnpm run build` (esbuild, bundling each script and its `~/services`/`~/agents` imports into one file with `node_modules` packages left external). Neither needs TypeScript, `~/*` path aliases, or a copy of `app/`/`tsconfig.json` at runtime — only the production image's `node_modules` and the compiled bundle. Local development uses `pnpm run worker:showrunner`/`worker:outbox` (via `tsx`, importing the TS source directly) for fast iteration.
 
-**These three containers do not share a filesystem by default**, which matters for media: the web app saves uploaded product images, the showrunner worker reads them back for the Analyze Agent's vision call, and the video worker saves narrated scene clips and the stitched final video that the web app then serves. With the default `MEDIA_STORAGE_DRIVER=local`, that only works if all three containers mount the *same* `uploads/` directory:
+**Without the outbox container running, nothing ever reaches Redis/BullMQ** — see the note in [Local Setup](#local-setup). It has no media-storage dependency and needs no volume mount.
+
+**The web, video-worker, and showrunner-worker containers do not share a filesystem by default**, which matters for media: the web app saves uploaded product images, the showrunner worker reads them back for the Analyze Agent's vision call, and the video worker saves narrated scene clips and the stitched final video that the web app then serves. With the default `MEDIA_STORAGE_DRIVER=local`, that only works if all three containers mount the *same* `uploads/` directory:
 
 ```bash
 docker volume create dramacommerce-uploads
@@ -211,7 +237,7 @@ On a single host (e.g. one ECS instance running all three containers, or `docker
 
 ## Deployment Notes
 
-Deploy the web app, showrunner worker, and video worker as separate container processes on Alibaba Cloud ECS. Use managed Postgres-compatible storage for `DATABASE_URL` and managed Redis/Tair for `REDIS_URL`. For media, set `MEDIA_STORAGE_DRIVER=oss` with the `OSS_*` vars (recommended — no shared filesystem needed across containers/hosts) or provision persistent shared storage for `uploads/` if staying on `MEDIA_STORAGE_DRIVER=local` (see [Docker](#docker)).
+Production runs (at least) four processes, all from the same Docker image: **web**, **showrunner worker**, **video worker**, and the **outbox dispatcher**. Deploy each as a separate container process on Alibaba Cloud ECS. Use managed Postgres-compatible storage for `DATABASE_URL` and managed Redis/Tair for `REDIS_URL`. For media, set `MEDIA_STORAGE_DRIVER=oss` with the `OSS_*` vars (recommended — no shared filesystem needed across containers/hosts) or provision persistent shared storage for `uploads/` if staying on `MEDIA_STORAGE_DRIVER=local` (see [Docker](#docker)). The outbox dispatcher can run more than one replica safely (`FOR UPDATE SKIP LOCKED` — see [Reliability & Idempotency](#reliability--idempotency)) if you want redundancy.
 
 Production checklist:
 
@@ -219,6 +245,6 @@ Production checklist:
 - Run `pnpm run db:migrate` before starting web or worker processes.
 - Put the web app behind HTTPS before using real merchant data.
 - Back up the Postgres database.
-- Configure log collection for Qwen, Wan, upload, worker, and storage errors.
+- Configure log collection for Qwen, Wan, upload, worker, storage, and outbox-dispatcher errors — dispatcher logs include the outbox event id, `job_key`, queue, and job name for every dispatch attempt/outcome, and the video worker's stale-generation logs are prefixed `[stale]` with project/scene/generation identifiers.
 - If using `MEDIA_STORAGE_DRIVER=oss`, switching an existing `local`-mode deployment over does not retroactively migrate already-uploaded files — old `/uploads/...` records keep working only as long as that deployment stays on `local` mode.
-- Use `/health` for uptime checks; it returns `200` when Postgres, Redis, required environment variables, `ffmpeg`, and storage (local directory writability, or OSS config + connectivity) are ready, and `503` when a dependency fails.
+- Use `/health` for uptime checks; it returns `200` when Postgres, Redis, required environment variables, `ffmpeg`, storage (local directory writability, or OSS config + connectivity), and the outbox (no stuck pending backlog — `OUTBOX_HEALTH_STALE_THRESHOLD_SECONDS`) are ready, and `503` when a dependency fails. The outbox check also reports `pendingCount`/`oldestPendingAgeSeconds`/`failedCount` (counts only, never payloads) as a proxy for dispatcher liveness, since there's no direct way to ping a separate process.

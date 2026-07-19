@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { pool } from "~/services/db.server";
 import { getVideoQueue } from "~/services/video-queue.server";
 import { getMediaStorage } from "~/services/storage/media-storage.server";
+import { getOutboxStats } from "~/services/outbox.server";
 
 const execFileAsync = promisify(execFile);
 
@@ -12,16 +13,23 @@ type HealthCheck = {
   message?: string;
 };
 
+type OutboxHealthCheck = HealthCheck & {
+  pendingCount?: number;
+  oldestPendingAgeSeconds?: number | null;
+  failedCount?: number;
+};
+
 export async function loader() {
-  const [database, redis, environment, ffmpeg, storage] = await Promise.all([
+  const [database, redis, environment, ffmpeg, storage, outbox] = await Promise.all([
     checkDatabase(),
     checkRedis(),
     checkEnvironment(),
     checkFfmpeg(),
     checkStorage(),
+    checkOutbox(),
   ]);
 
-  const healthy = [database, redis, environment, ffmpeg, storage].every(
+  const healthy = [database, redis, environment, ffmpeg, storage, outbox].every(
     (check) => check.status === "ok",
   );
 
@@ -34,6 +42,7 @@ export async function loader() {
         environment,
         ffmpeg,
         storage,
+        outbox,
       },
       uptimeSeconds: Math.round(process.uptime()),
       checkedAt: new Date().toISOString(),
@@ -126,6 +135,43 @@ async function checkStorage(): Promise<HealthCheck> {
       status: result.status,
       latencyMs: getLatency(startedAt),
       message: result.message,
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      latencyMs: getLatency(startedAt),
+      message: getErrorMessage(error),
+    };
+  }
+}
+
+const OUTBOX_STALE_THRESHOLD_SECONDS = Number(
+  process.env.OUTBOX_HEALTH_STALE_THRESHOLD_SECONDS || "120",
+);
+
+// There's no direct way to "ping" a separate dispatcher process, so its
+// health is inferred from outbox freshness: a pending event that's been
+// sitting for longer than a normal dispatch cycle strongly suggests no
+// dispatcher instance is running (or it can't reach Postgres/Redis). Counts
+// only — never event payloads, which may carry user-submitted brief text.
+async function checkOutbox(): Promise<OutboxHealthCheck> {
+  const startedAt = performance.now();
+
+  try {
+    const stats = await getOutboxStats();
+    const isStale =
+      stats.oldestPendingAgeSeconds !== null &&
+      stats.oldestPendingAgeSeconds > OUTBOX_STALE_THRESHOLD_SECONDS;
+
+    return {
+      status: isStale ? "error" : "ok",
+      latencyMs: getLatency(startedAt),
+      message: isStale
+        ? `Oldest pending outbox event is ${stats.oldestPendingAgeSeconds}s old (threshold ${OUTBOX_STALE_THRESHOLD_SECONDS}s) — the outbox dispatcher may not be running.`
+        : undefined,
+      pendingCount: stats.pendingCount,
+      oldestPendingAgeSeconds: stats.oldestPendingAgeSeconds,
+      failedCount: stats.failedCount,
     };
   } catch (error) {
     return {

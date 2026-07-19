@@ -7,8 +7,7 @@ import {
   useNavigation,
 } from "react-router";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { createShowrunnerJob } from "~/services/project-store.server";
-import { enqueueShowrunnerGenerateJob } from "~/services/showrunner-queue.server";
+import { createShowrunnerJobWithOutbox } from "~/services/project-store.server";
 import {
   checkUsageQuota,
   getBillingSummary,
@@ -72,13 +71,23 @@ export function meta() {
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
 
-  return { billing: await getBillingSummary(user.id) };
+  return {
+    billing: await getBillingSummary(user.id),
+    // Round-tripped through a hidden field and used as the showrunner
+    // job's id — a duplicate POST with the same token (browser retry,
+    // back-button resubmit) hits a primary-key conflict and is treated as
+    // a replay instead of a new job. See
+    // project-store.server.ts#createShowrunnerJobWithOutbox.
+    idempotencyToken: crypto.randomUUID(),
+  };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   const user = await requireUser(request);
   const formData = await request.formData();
 
+  const idempotencyToken =
+    getFormString(formData, "idempotencyToken") || crypto.randomUUID();
   const productName = getFormString(formData, "productName");
   const productDescription = getFormString(formData, "productDescription");
   const keySellingPoints = getFormString(formData, "keySellingPoints");
@@ -151,27 +160,37 @@ export async function action({ request }: ActionFunctionArgs) {
     productReferenceMode,
   };
 
-  const showrunnerJobId = crypto.randomUUID();
+  let showrunnerJobId: string;
+  let created: boolean;
 
   try {
-    await createShowrunnerJob(showrunnerJobId, user.id, brief);
-    await enqueueShowrunnerGenerateJob({
-      showrunnerJobId,
-      userId: user.id,
-    });
+    const result = await createShowrunnerJobWithOutbox(idempotencyToken, user.id, brief);
+    showrunnerJobId = result.job.id;
+    created = result.created;
+  } catch (error) {
+    console.error("Failed to create show plan generation job:", error);
+    await deleteUploadedFile(uploadedImage.imageUrl);
+
+    return {
+      error: "Unable to queue generation. Try again.",
+    };
+  }
+
+  if (created) {
+    // The outbox event was committed in the same transaction as the
+    // showrunner_jobs row above — actual BullMQ delivery is the outbox
+    // dispatcher's job (scripts/outbox-dispatcher.mts), not this route's.
     await recordUsageEvent({
       userId: user.id,
       eventType: "showrunner_generation",
       sourceId: showrunnerJobId,
     });
-  } catch (error) {
-    console.error("Failed to queue show plan generation:", error);
+  } else {
+    // Idempotent replay: this exact submission was already processed, so
+    // the freshly uploaded image for THIS request is redundant — the
+    // original submission's image is already referenced by the existing
+    // job. Clean it up instead of leaking an orphaned upload.
     await deleteUploadedFile(uploadedImage.imageUrl);
-
-    return {
-      error:
-        "Unable to queue generation. Check Redis/BullMQ configuration and try again.",
-    };
   }
 
   return redirect(`/projects/new/${showrunnerJobId}`);
@@ -260,7 +279,7 @@ function getUploadErrorMessage(error: unknown): string {
 }
 
 export default function Generate() {
-  const { billing } = useLoaderData<typeof loader>();
+  const { billing, idempotencyToken } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isGenerating = navigation.state !== "idle";
@@ -300,6 +319,8 @@ export default function Generate() {
               encType="multipart/form-data"
               className="mt-8 space-y-6 rounded-sm border border-paper-dim bg-paper p-8 text-ink shadow-2xl"
             >
+              <input type="hidden" name="idempotencyToken" value={idempotencyToken} />
+
               <div className="flex items-center justify-between border-b border-ink/10 pb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-ink/50">
                 <span>Product Inputs</span>
                 <span>Scene Count · 05</span>

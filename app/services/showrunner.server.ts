@@ -11,6 +11,9 @@ import {
     evaluateVideoReadinessSkill,
     normalizeReferenceSceneUsage,
 } from "~/services/skills/video-readiness-skill.server";
+import { showPlanSchema } from "~/services/domain/schemas.server";
+import { buildDomainValidationError } from "~/services/domain/errors.server";
+import { CURRENT_SHOW_PLAN_SCHEMA_VERSION } from "~/services/domain/limits.server";
 import type { ShowrunnerJobStatus } from "~/types/showrunner-status";
 import type { AgentTokenUsage, ProductBrief, ShowPlan } from "~/types/showrunner";
 
@@ -77,8 +80,9 @@ export async function generateShowPlan(
         track("editor", CHAT_MODEL()),
     );
 
-    return {
-        source: "qwen",
+    const assembledPlan = {
+        schemaVersion: CURRENT_SHOW_PLAN_SCHEMA_VERSION,
+        source: "qwen" as const,
         brief,
         analysis,
         concept: story.concept,
@@ -91,6 +95,25 @@ export async function generateShowPlan(
         cta: editorPackage.cta,
         tokenUsage,
     };
+
+    // Final cross-agent consistency check (brief-vs-storyboard reference-
+    // image invariants) — every field's own shape was already validated by
+    // its agent's individual schema; this is the one check that needs the
+    // brief AND the storyboard together, so it can only run here, after the
+    // whole pipeline has assembled both. Not repair-eligible by design (see
+    // schemas.server.ts) — a failure here means generation fails outright,
+    // same as before this validation existed.
+    const validated = showPlanSchema.safeParse(assembledPlan);
+
+    if (!validated.success) {
+        throw buildDomainValidationError(
+            "invalid_ai_output",
+            "Generated show plan failed final consistency validation",
+            validated.error,
+        );
+    }
+
+    return validated.data;
 }
 
 function getSkillRevisionNotes(

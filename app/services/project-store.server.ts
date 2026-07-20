@@ -21,6 +21,8 @@ import {
   parseVideoGenerationStatus,
   type VideoGenerationStatus,
 } from "~/types/video-status";
+import { productBriefSchema, showPlanSchema } from "~/services/domain/schemas.server";
+import { buildDomainValidationError, summarizeZodIssues } from "~/services/domain/errors.server";
 
 // Statuses that mean "there is already active work in flight for this
 // scene/stitch" — createVideoGenerationWithOutbox/createStitchGenerationWithOutbox
@@ -66,6 +68,15 @@ export type SavedProject = {
   id: string;
   createdAt: string;
   showPlan: ShowPlan;
+  // "invalid" means row.showPlan failed schemaShowPlan validation on read —
+  // do not trust or process `showPlan` in that case (it is a best-effort
+  // pass-through of whatever raw JSON was in Postgres, kept only so the type
+  // still compiles for the many read-only display call sites; callers must
+  // check this flag before treating the plan's fields as meaningful). See
+  // routes/projects.$projectId.tsx / projects.tsx / dashboard.tsx for the
+  // controlled "needs regeneration" state this drives.
+  schemaStatus: "ok" | "invalid";
+  schemaError?: string;
   videoJobs?: VideoGenerationJob[];
   finalVideo?: FinalVideo;
 };
@@ -74,12 +85,60 @@ export type ShowrunnerJob = {
   id: string;
   userId: string;
   brief: ProductBrief;
+  // Same shape of caveat as SavedProject.schemaStatus, but for brief_json.
+  // In practice this row is short-lived (read once by the worker moments
+  // after being written by the now schema-guarded /projects/new action), so
+  // the one real consumer that must not proceed on invalid data
+  // (scripts/showrunner-worker.mts) checks this explicitly before spending
+  // a Qwen call; the ephemeral status-polling route does not gate on it.
+  briefSchemaStatus: "ok" | "invalid";
   status: ShowrunnerJobStatus;
   errorMessage?: string;
   projectId?: string;
   createdAt: string;
   updatedAt: string;
 };
+
+// Never throws — a corrupted/legacy show_plan must produce a controlled
+// "invalid" status, not crash the page or worker that reads it. Return keys
+// match SavedProject's field names directly so callers can spread the
+// result straight into the object literal they're building.
+function parsePersistedShowPlan(
+  raw: unknown,
+): { showPlan: ShowPlan; schemaStatus: "ok" | "invalid"; schemaError?: string } {
+  const result = showPlanSchema.safeParse(raw);
+
+  if (result.success) {
+    return { showPlan: result.data, schemaStatus: "ok" };
+  }
+
+  const issues = summarizeZodIssues(result.error);
+  console.error(`[project-store] persisted show_plan failed validation: ${issues.join("; ")}`);
+
+  return {
+    // Best-effort pass-through so the type still compiles for display call
+    // sites — callers MUST check schemaStatus before trusting any field on
+    // this.
+    showPlan: raw as ShowPlan,
+    schemaStatus: "invalid",
+    schemaError: `Saved project data no longer matches the expected schema (${issues.slice(0, 3).join("; ")}).`,
+  };
+}
+
+function parsePersistedProductBrief(
+  raw: unknown,
+): { brief: ProductBrief; briefSchemaStatus: "ok" | "invalid" } {
+  const result = productBriefSchema.safeParse(raw);
+
+  if (result.success) {
+    return { brief: result.data, briefSchemaStatus: "ok" };
+  }
+
+  const issues = summarizeZodIssues(result.error);
+  console.error(`[project-store] persisted brief_json failed validation: ${issues.join("; ")}`);
+
+  return { brief: raw as ProductBrief, briefSchemaStatus: "invalid" };
+}
 
 // idempotencyToken is server-generated in the /projects/new loader and
 // round-tripped through a hidden form field — it becomes the
@@ -171,7 +230,7 @@ function rowToShowrunnerJob(row: typeof showrunnerJobs.$inferSelect): Showrunner
   return {
     id: row.id,
     userId: row.userId,
-    brief: row.briefJson,
+    ...parsePersistedProductBrief(row.briefJson),
     status: parseShowrunnerJobStatus(row.status),
     errorMessage: row.errorMessage ?? undefined,
     projectId: row.projectId ?? undefined,
@@ -198,6 +257,10 @@ export async function saveProjectAndCompleteShowrunnerJob(
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
       showPlan,
+      // showPlan here is generateShowPlan's own already-validated output
+      // (see showrunner.server.ts's final showPlanSchema check) — no need
+      // to re-parse a freshly generated plan we just built ourselves.
+      schemaStatus: "ok",
     };
 
     await tx.insert(projects).values({
@@ -247,7 +310,7 @@ export async function listProjects(userId: string): Promise<SavedProject[]> {
   return rows.map((row) => ({
     id: row.id,
     createdAt: row.createdAt.toISOString(),
-    showPlan: row.showPlan,
+    ...parsePersistedShowPlan(row.showPlan),
     videoJobs: videoJobsByProjectId.get(row.id) ?? [],
     finalVideo: finalVideosByProjectId.get(row.id),
   }));
@@ -291,6 +354,15 @@ export async function listProjectsForDisplay(userId: string): Promise<SavedProje
 }
 
 async function resolveProjectMediaUrls(project: SavedProject): Promise<SavedProject> {
+  // An "invalid" showPlan is a best-effort raw pass-through (see
+  // parsePersistedShowPlan) — its shape isn't guaranteed, so don't attempt
+  // to dereference .brief.imageUrl / .videoJobs / .finalVideo through it.
+  // The controlled "needs regeneration" UI never renders media for this
+  // project anyway.
+  if (project.schemaStatus === "invalid") {
+    return project;
+  }
+
   const storage = getMediaStorage();
 
   const resolveRef = async (ref: string | undefined): Promise<string | undefined> => {
@@ -511,14 +583,30 @@ export async function createVideoGenerationWithOutbox(
   });
 }
 
+// Validates through the exact same schema AI-generated show plans are
+// validated against — a merchant edit (concept/hook/voice-over/scene
+// prompt) must satisfy the identical bounds and cross-field invariants as
+// the original AI output, never a looser ad hoc check. Throws
+// DomainValidationError rather than silently persisting data that would
+// fail validation on the very next read.
 export async function updateShowPlan(
   id: string,
   userId: string,
   showPlan: ShowPlan,
 ): Promise<SavedProject | null> {
+  const validated = showPlanSchema.safeParse(showPlan);
+
+  if (!validated.success) {
+    throw buildDomainValidationError(
+      "merchant_input",
+      "Edited show plan failed validation",
+      validated.error,
+    );
+  }
+
   await db
     .update(projects)
-    .set({ showPlan })
+    .set({ showPlan: validated.data })
     .where(and(eq(projects.id, id), eq(projects.userId, userId)));
 
   return getProject(id, userId);
@@ -626,7 +714,7 @@ async function rowToProject(row: typeof projects.$inferSelect): Promise<SavedPro
   return {
     id: row.id,
     createdAt: row.createdAt.toISOString(),
-    showPlan: row.showPlan,
+    ...parsePersistedShowPlan(row.showPlan),
     videoJobs: videoJobsForProject,
     finalVideo: finalVideoForProject,
   };

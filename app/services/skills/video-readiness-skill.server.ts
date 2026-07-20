@@ -5,6 +5,11 @@ import type {
   StoryboardScene,
 } from "~/types/showrunner";
 import type { SkillResult } from "~/services/skills/types";
+import {
+  getMaxSceneVoiceOverChars,
+  getProductDurationSeconds,
+  getWanSceneDurationSeconds,
+} from "~/services/domain/limits.server";
 
 type SceneWithReferenceDecision = DirectedScene | StoryboardScene;
 
@@ -57,6 +62,21 @@ export function evaluateVideoReadinessSkill(
     warnings.push(`Storyboard has ${storyboard.length} scenes instead of 5.`);
   }
 
+  // Wan renders every scene at the same fixed WAN_VIDEO_DURATION regardless
+  // of the merchant's declared total ad duration — a real, pre-existing
+  // architectural property, not something this validation pass can fix.
+  // Surfaced as a warning (feeds the Critic's revision notes, same as any
+  // other skill warning) rather than a hard schema rejection, which would
+  // break every generation given this mismatch exists by construction.
+  const declaredSeconds = brief ? getProductDurationSeconds(brief.duration) : undefined;
+  const actualRenderSeconds = 5 * getWanSceneDurationSeconds();
+
+  if (declaredSeconds !== undefined && declaredSeconds !== actualRenderSeconds) {
+    warnings.push(
+      `Brief declares a ${declaredSeconds}s ad, but Wan renders 5 scenes at a fixed duration totaling ${actualRenderSeconds}s — pace the storyboard for the actual render length, not the declared duration.`,
+    );
+  }
+
   if (referenceScenes.length > 1) {
     warnings.push("More than one scene uses the product reference image; this can make Wan output less stable.");
   }
@@ -78,7 +98,7 @@ export function evaluateVideoReadinessSkill(
       warnings.push(`Scene ${scene.scene} is missing a Wan prompt.`);
     }
 
-    if (scene.voiceOver.length > 90) {
+    if (scene.voiceOver.length > getMaxSceneVoiceOverChars()) {
       warnings.push(`Scene ${scene.scene} voice-over may be too long for a short Wan clip.`);
     }
   }

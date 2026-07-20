@@ -20,34 +20,20 @@ import {
 } from "~/services/image-upload.server";
 import { checkGenerateRateLimit } from "~/services/rate-limit.server";
 import { requireUser } from "~/services/auth.server";
-import type { ProductBrief } from "~/types/showrunner";
+import { productBriefSchema } from "~/services/domain/schemas.server";
+import type { ZodError } from "zod";
 
-const MOOD_OPTIONS = new Set([
-  "Cinematic",
-  "Funny",
-  "Premium",
-  "Emotional",
-  "Fast-paced",
-]);
-
-const PLATFORM_OPTIONS = new Set([
-  "TikTok",
-  "Instagram Reels",
-  "YouTube Shorts",
-]);
-
-const DURATION_OPTIONS = new Set([
-  "15 seconds",
-  "30 seconds",
-  "45 seconds",
-  "60 seconds",
-]);
-
-const ASPECT_RATIO_OPTIONS = new Set(["9:16", "1:1", "16:9"]);
-const PRODUCT_REFERENCE_MODE_OPTIONS = new Set(["auto", "force", "disable"]);
 const DEFAULT_TARGET_AUDIENCE = "General online shoppers";
-type AspectRatio = NonNullable<ProductBrief["aspectRatio"]>;
-type ProductReferenceMode = NonNullable<ProductBrief["productReferenceMode"]>;
+
+// imageName/imageUrl aren't known until after the upload — validate the
+// rest of the brief first (so an invalid brief never triggers an
+// unnecessary upload), then validate the complete brief once the image is
+// saved.
+const earlyBriefSchema = productBriefSchema.omit({ imageName: true, imageUrl: true });
+
+function firstIssueMessage(error: ZodError): string {
+  return error.issues[0]?.message ?? "Invalid product brief.";
+}
 
 const crew = [
   { role: "Analyze Agent", job: "Reads the product photo for category, colors, and quality" },
@@ -88,36 +74,23 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const idempotencyToken =
     getFormString(formData, "idempotencyToken") || crypto.randomUUID();
-  const productName = getFormString(formData, "productName");
-  const productDescription = getFormString(formData, "productDescription");
-  const keySellingPoints = getFormString(formData, "keySellingPoints");
-  const offer = getFormString(formData, "offer");
-  const targetAudience =
-    getFormString(formData, "targetAudience") || DEFAULT_TARGET_AUDIENCE;
-  const mood = getFormString(formData, "mood");
-  const platform = getFormString(formData, "platform");
-  const duration = getFormString(formData, "duration");
-  const aspectRatio = parseAspectRatio(getFormString(formData, "aspectRatio"));
-  const showProductOverlay = formData.has("showProductOverlay");
-  const productReferenceMode = parseProductReferenceMode(
-    getFormString(formData, "productReferenceMode"),
-  );
 
-  const validationError = validateBriefFields({
-    productName,
-    productDescription,
-    keySellingPoints,
-    offer,
-    targetAudience,
-    mood,
-    platform,
-    duration,
-    aspectRatio,
-    productReferenceMode,
+  const earlyBriefResult = earlyBriefSchema.safeParse({
+    productName: getFormString(formData, "productName"),
+    productDescription: getFormString(formData, "productDescription") || undefined,
+    keySellingPoints: getFormString(formData, "keySellingPoints") || undefined,
+    offer: getFormString(formData, "offer") || undefined,
+    targetAudience: getFormString(formData, "targetAudience") || DEFAULT_TARGET_AUDIENCE,
+    mood: getFormString(formData, "mood"),
+    platform: getFormString(formData, "platform"),
+    duration: getFormString(formData, "duration"),
+    aspectRatio: getFormString(formData, "aspectRatio") || undefined,
+    showProductOverlay: formData.has("showProductOverlay"),
+    productReferenceMode: getFormString(formData, "productReferenceMode") || undefined,
   });
 
-  if (validationError) {
-    return { error: validationError };
+  if (!earlyBriefResult.success) {
+    return { error: firstIssueMessage(earlyBriefResult.error) };
   }
 
   const productImage = formData.get("productImage");
@@ -144,21 +117,22 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const uploadedImage = await saveUploadedImage(productImage);
 
-  const brief = {
-    productName,
-    productDescription: productDescription || undefined,
-    keySellingPoints: keySellingPoints || undefined,
-    offer: offer || undefined,
-    targetAudience,
-    mood,
-    platform,
-    duration,
-    aspectRatio,
+  const briefResult = productBriefSchema.safeParse({
+    ...earlyBriefResult.data,
     imageName: uploadedImage.imageName,
     imageUrl: uploadedImage.imageUrl,
-    showProductOverlay,
-    productReferenceMode,
-  };
+  });
+
+  if (!briefResult.success) {
+    // imageName/imageUrl come from our own upload logic (already bounded by
+    // image-upload.server.ts), so this should be unreachable in practice —
+    // fail safely and clean up the upload rather than persist a brief that
+    // would fail validation on the very next read.
+    await deleteUploadedFile(uploadedImage.imageUrl);
+    return { error: firstIssueMessage(briefResult.error) };
+  }
+
+  const brief = briefResult.data;
 
   let showrunnerJobId: string;
   let created: boolean;
@@ -198,76 +172,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
 function getFormString(formData: FormData, key: string): string {
   return String(formData.get(key) || "").trim();
-}
-
-function validateBriefFields({
-  productName,
-  productDescription,
-  keySellingPoints,
-  offer,
-  targetAudience,
-  mood,
-  platform,
-  duration,
-  aspectRatio,
-  productReferenceMode,
-}: {
-  productName: string;
-  productDescription: string;
-  keySellingPoints: string;
-  offer: string;
-  targetAudience: string;
-  mood: string;
-  platform: string;
-  duration: string;
-  aspectRatio: string;
-  productReferenceMode: string;
-}): string | null {
-  if (!productName) {
-    return "Product name is required.";
-  }
-
-  if (productDescription.length > 500) {
-    return "Product description must be 500 characters or fewer.";
-  }
-
-  if (keySellingPoints.length > 500) {
-    return "Key selling points must be 500 characters or fewer.";
-  }
-
-  if (offer.length > 180) {
-    return "Offer must be 180 characters or fewer.";
-  }
-
-  if (!MOOD_OPTIONS.has(mood)) {
-    return "Choose a valid mood.";
-  }
-
-  if (!PLATFORM_OPTIONS.has(platform)) {
-    return "Choose a valid platform.";
-  }
-
-  if (!DURATION_OPTIONS.has(duration)) {
-    return "Choose a valid duration.";
-  }
-
-  if (!ASPECT_RATIO_OPTIONS.has(aspectRatio)) {
-    return "Choose a valid aspect ratio.";
-  }
-
-  if (!PRODUCT_REFERENCE_MODE_OPTIONS.has(productReferenceMode)) {
-    return "Choose a valid product reference mode.";
-  }
-
-  return null;
-}
-
-function parseAspectRatio(value: string): AspectRatio {
-  return ASPECT_RATIO_OPTIONS.has(value) ? value as AspectRatio : "9:16";
-}
-
-function parseProductReferenceMode(value: string): ProductReferenceMode {
-  return PRODUCT_REFERENCE_MODE_OPTIONS.has(value) ? value as ProductReferenceMode : "auto";
 }
 
 function getUploadErrorMessage(error: unknown): string {

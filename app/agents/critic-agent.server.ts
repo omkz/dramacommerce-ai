@@ -2,8 +2,10 @@ import { callQwenJson, type QwenUsage } from "~/services/qwen.server";
 import { formatSkillResult } from "~/services/skills/format-skill-result";
 import { evaluatePromptSafetySkill } from "~/services/skills/prompt-safety-skill.server";
 import { evaluateVideoReadinessSkill } from "~/services/skills/video-readiness-skill.server";
-import { validateCriticResult } from "~/services/showrunner-validator.server";
+import { validateWithRepair } from "~/services/agent-json-repair.server";
+import { criticResultSchema } from "~/services/domain/schemas.server";
 import type {
+  CriticResult,
   ProductAnalysis,
   ProductBrief,
   StoryBible,
@@ -16,13 +18,12 @@ export async function runCriticAgent(
   storyBible: StoryBible,
   analysis?: ProductAnalysis,
   onUsage?: (usage: QwenUsage) => void,
-): Promise<{ approved: boolean; notes?: string }> {
+): Promise<CriticResult> {
   const promptSafety = evaluatePromptSafetySkill(storyboard, analysis);
   const videoReadiness = evaluateVideoReadinessSkill(storyboard, analysis, brief);
 
-  const rawResult = await callQwenJson({
-    system: `You are the Critic Agent for DramaCommerce AI. Review the storyboard for quality before it goes to render. Return only valid JSON.`,
-    user: `
+  const system = `You are the Critic Agent for DramaCommerce AI. Review the storyboard for quality before it goes to render. Return only valid JSON.`;
+  const user = `
 Review this 5-scene storyboard for a short product drama ad.
 
 Story bible (compact production context — product facts, visual style, story core, constraints):
@@ -52,9 +53,13 @@ Check for:
 - Treat custom skill warnings as defects unless the storyboard clearly resolves them.
 
 Set approved to true only if there are no defects worth fixing. If approved is false, give specific, actionable notes for revising the storyboard.
-`,
-    onUsage,
-  });
+`;
 
-  return validateCriticResult(rawResult);
+  const rawResult = await callQwenJson({ system, user, onUsage });
+
+  return validateWithRepair(criticResultSchema, rawResult, {
+    system,
+    user,
+    agentLabel: "Critic Agent",
+  });
 }

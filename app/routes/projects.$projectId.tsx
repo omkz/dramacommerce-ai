@@ -33,6 +33,18 @@ import {
 } from "~/services/billing.server";
 import type { AgentTokenUsage, DramaticBeat, StoryboardScene } from "~/types/showrunner";
 import { AgentTimeline, type TimelineStageState } from "~/components/agent-timeline";
+import { getMaxSceneVoiceOverChars } from "~/services/domain/limits.server";
+import { storyPackageSchema, storyboardSceneSchema } from "~/services/domain/schemas.server";
+import { DomainValidationError } from "~/services/domain/errors.server";
+
+function getDomainErrorMessage(error: unknown): string {
+  if (error instanceof DomainValidationError) {
+    return error.message;
+  }
+
+  console.error("Unexpected error updating project:", error);
+  return "Unable to save your changes. Try again.";
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const user = await requireUser(request);
@@ -48,10 +60,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Project not found", { status: 404 });
   }
 
+  // Corrupted/legacy show_plan that no longer parses — a controlled state
+  // rather than crashing on the very first `.showPlan.X` access below.
+  if (project.schemaStatus === "invalid") {
+    return {
+      schemaStatus: "invalid" as const,
+      id: project.id,
+      createdAt: project.createdAt,
+      schemaError: project.schemaError,
+    };
+  }
+
   return {
     ...project,
+    schemaStatus: "ok" as const,
     billing: await getBillingSummary(user.id),
-    maxVoiceOverChars: getMaxVoiceOverChars(),
+    maxVoiceOverChars: getMaxSceneVoiceOverChars(),
     renderResolution: getRenderResolutionLabel(project.showPlan.brief.aspectRatio),
   };
 }
@@ -68,20 +92,6 @@ function getRenderResolutionLabel(aspectRatio: string | undefined): string {
   }
 
   return baseResolution === "1080P" ? "1080x1920" : "720x1280";
-}
-
-// Wan renders every scene at a fixed WAN_VIDEO_DURATION regardless of the
-// scene's narrative pacing, so a voice-over line longer than that duration
-// gets cut off mid-sentence when muxed (ffmpeg's -shortest caps the output
-// at the video's length). 15 chars/sec is a conservative average spoken
-// pace estimate — used for both the textarea's UX hint and the server-side
-// check below, so they never disagree.
-const SPOKEN_CHARS_PER_SECOND = 15;
-
-function getMaxVoiceOverChars(): number {
-  const durationSeconds = Number(process.env.WAN_VIDEO_DURATION || "5");
-
-  return Math.max(20, Math.round(durationSeconds * SPOKEN_CHARS_PER_SECOND));
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -106,7 +116,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     if (deleted) {
       await Promise.all([
-        deleteUploadedFile(deleted.showPlan.brief.imageUrl),
+        // deleted.showPlan may be a best-effort raw pass-through when
+        // schemaStatus is "invalid" (see parsePersistedShowPlan) — optional
+        // chaining here so deleting a corrupted project (the one thing it
+        // must always be possible to do) can't itself crash on an
+        // unexpected shape.
+        deleteUploadedFile(deleted.showPlan?.brief?.imageUrl),
         deleteUploadedFile(deleted.finalVideo?.videoUrl),
         ...(deleted.videoJobs ?? []).map((job) =>
           deleteUploadedFile(job.videoUrl),
@@ -115,6 +130,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
 
     return redirect("/projects");
+  }
+
+  if (project.schemaStatus === "invalid") {
+    return {
+      error:
+        "This project's saved data is invalid and can't be edited or rendered. Delete it and regenerate.",
+    };
   }
 
   if (intent === "create-all-video-tasks") {
@@ -188,22 +210,28 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "edit-story") {
-    const concept = String(formData.get("concept") || "").trim();
-    const conflict = String(formData.get("conflict") || "").trim();
-    const hook = String(formData.get("hook") || "").trim();
-    const voiceOver = String(formData.get("voiceOver") || "").trim();
+    // Same bounds/whitespace rules the Story Agent's own output is held to
+    // — a merchant edit is validated through the identical schema, never a
+    // looser ad hoc check.
+    const storyEdit = storyPackageSchema.safeParse({
+      concept: formData.get("concept"),
+      conflict: formData.get("conflict"),
+      hook: formData.get("hook"),
+      voiceOver: formData.get("voiceOver"),
+    });
 
-    if (!concept || !conflict || !hook || !voiceOver) {
-      return { error: "Concept, conflict, hook, and voice-over can't be empty." };
+    if (!storyEdit.success) {
+      return { error: storyEdit.error.issues[0]?.message ?? "Invalid story edit." };
     }
 
-    await updateShowPlan(projectId, user.id, {
-      ...project.showPlan,
-      concept,
-      conflict,
-      hook,
-      voiceOver,
-    });
+    try {
+      await updateShowPlan(projectId, user.id, {
+        ...project.showPlan,
+        ...storyEdit.data,
+      });
+    } catch (error) {
+      return { error: getDomainErrorMessage(error) };
+    }
 
     return redirect(`/projects/${projectId}`);
   }
@@ -286,7 +314,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     const promptOverride = String(formData.get("prompt") || "").trim();
     const voiceOverOverride = String(formData.get("voiceOver") || "").trim();
-    const maxVoiceOverChars = getMaxVoiceOverChars();
+    const maxVoiceOverChars = getMaxSceneVoiceOverChars();
 
     if (voiceOverOverride.length > maxVoiceOverChars) {
       return {
@@ -326,20 +354,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "edit-scene") {
-    const promptEdit = String(formData.get("prompt") || "").trim();
-    const voiceOverEdit = String(formData.get("voiceOver") || "").trim();
-    const maxVoiceOverChars = getMaxVoiceOverChars();
+    // Validate the merged scene (existing fields + the edited prompt/
+    // voice-over) through the exact same schema the Prompt Agent's own
+    // output is held to — same bounds, same duration-aware voice-over rule.
+    const sceneEdit = storyboardSceneSchema.safeParse({
+      ...scene,
+      videoPrompt: formData.get("prompt"),
+      voiceOver: formData.get("voiceOver"),
+    });
 
-    if (!promptEdit || !voiceOverEdit) {
+    if (!sceneEdit.success) {
       return {
-        error: "Prompt and voice-over can't be empty.",
-        scene: sceneNumber,
-      };
-    }
-
-    if (voiceOverEdit.length > maxVoiceOverChars) {
-      return {
-        error: `Voice-over is too long for a ${process.env.WAN_VIDEO_DURATION || "5"}s scene (max ~${maxVoiceOverChars} characters) — it will get cut off mid-sentence. Shorten it and try again.`,
+        error: sceneEdit.error.issues[0]?.message ?? "Invalid scene edit.",
         scene: sceneNumber,
       };
     }
@@ -351,21 +377,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (currentJob) {
       await saveVideoJob(projectId, user.id, {
         ...currentJob,
-        prompt: promptEdit,
-        voiceOver: voiceOverEdit,
+        prompt: sceneEdit.data.videoPrompt,
+        voiceOver: sceneEdit.data.voiceOver,
         updatedAt: new Date().toISOString(),
       });
     } else {
       const updatedStoryboard = project.showPlan.storyboard.map((item) =>
-        item.scene === scene.scene
-          ? { ...item, videoPrompt: promptEdit, voiceOver: voiceOverEdit }
-          : item,
+        item.scene === scene.scene ? sceneEdit.data : item,
       );
 
-      await updateShowPlan(projectId, user.id, {
-        ...project.showPlan,
-        storyboard: updatedStoryboard,
-      });
+      try {
+        await updateShowPlan(projectId, user.id, {
+          ...project.showPlan,
+          storyboard: updatedStoryboard,
+        });
+      } catch (error) {
+        return { error: getDomainErrorMessage(error), scene: sceneNumber };
+      }
     }
 
     return redirect(`/projects/${projectId}`);
@@ -536,6 +564,38 @@ export default function ProjectDetail() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const [editingScene, setEditingScene] = useState<number | null>(null);
+
+  // Every hook above must run unconditionally regardless of schemaStatus
+  // (Rules of Hooks) — shouldAutoRefresh is computed defensively (false
+  // when invalid) so the effect below has something safe to depend on
+  // either way; the actual branch to the "needs regeneration" screen
+  // happens further down, after all hooks are called.
+  const shouldAutoRefresh =
+    project.schemaStatus === "ok" &&
+    Boolean(
+      project.videoJobs?.some((job) => isInFlightJobStatus(job.status)) ||
+        (project.finalVideo ? isInFlightJobStatus(project.finalVideo.status) : false),
+    );
+
+  useEffect(() => {
+    if (!shouldAutoRefresh) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (revalidator.state === "idle") {
+        revalidator.revalidate();
+      }
+    }, 8_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [revalidator, shouldAutoRefresh]);
+
+  if (project.schemaStatus === "invalid") {
+    return <InvalidProjectScreen project={project} actionData={actionData} navigation={navigation} />;
+  }
+
   const result = project.showPlan;
   const pendingIntent = navigation.formData?.get("intent");
   const pendingScene = navigation.formData?.get("scene");
@@ -562,28 +622,6 @@ export default function ProjectDetail() {
         new Date(project.finalVideo!.updatedAt).getTime(),
     );
   const isDeletingProject = pendingIntent === "delete-project";
-  const hasInFlightSceneVideos = project.videoJobs?.some((job) =>
-    isInFlightJobStatus(job.status),
-  );
-  const hasInFlightFinalVideo = project.finalVideo
-    ? isInFlightJobStatus(project.finalVideo.status)
-    : false;
-  const shouldAutoRefresh = hasInFlightSceneVideos || hasInFlightFinalVideo;
-  const [editingScene, setEditingScene] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!shouldAutoRefresh) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      if (revalidator.state === "idle") {
-        revalidator.revalidate();
-      }
-    }, 8_000);
-
-    return () => window.clearInterval(intervalId);
-  }, [revalidator, shouldAutoRefresh]);
 
   return (
     <main className="min-h-screen bg-ink px-6 py-10 text-bone">
@@ -1378,6 +1416,63 @@ function SmallStat({ label, value }: { label: string; value: string }) {
       <p className="font-mono text-[9px] uppercase tracking-widest text-ash">{label}</p>
       <p className="mt-1 text-xs font-semibold text-bone">{value}</p>
     </div>
+  );
+}
+
+type InvalidProjectScreenProps = {
+  project: { id: string; createdAt: string; schemaError?: string };
+  actionData: { error?: string } | undefined;
+  navigation: ReturnType<typeof useNavigation>;
+};
+
+// Controlled state for a project whose show_plan no longer parses (schema
+// drift, corruption, or genuinely unsupported legacy data) — never renders
+// or edits the underlying data, only offers deletion so the merchant isn't
+// permanently stuck with an unusable row.
+function InvalidProjectScreen({ project, actionData, navigation }: InvalidProjectScreenProps) {
+  const isDeleting = navigation.formData?.get("intent") === "delete-project";
+
+  return (
+    <main className="min-h-screen bg-ink px-6 py-10 text-bone">
+      <div className="mx-auto max-w-2xl">
+        <Link to="/projects" className="text-sm text-ash hover:text-bone">
+          ← Back to Projects
+        </Link>
+
+        <div className="mt-10 rounded-lg border border-flame/40 bg-flame/10 p-8">
+          <p className="font-mono text-xs uppercase tracking-[0.3em] text-flame">
+            Needs Regeneration
+          </p>
+          <h1 className="mt-4 font-display text-3xl font-medium text-bone">
+            This project&rsquo;s saved data is invalid
+          </h1>
+          <p className="mt-4 text-sm leading-6 text-ash">
+            {project.schemaError ??
+              "This project's saved data no longer matches the expected format and can't be displayed or edited safely."}
+          </p>
+          <p className="mt-2 font-mono text-xs text-ash/70">
+            Project ID: {project.id} · Created {new Date(project.createdAt).toLocaleString()}
+          </p>
+
+          {actionData?.error ? (
+            <p className="mt-4 rounded-sm border border-flame/40 bg-flame/10 p-3 text-sm text-flame">
+              {actionData.error}
+            </p>
+          ) : null}
+
+          <Form method="post" className="mt-6">
+            <input type="hidden" name="intent" value="delete-project" />
+            <button
+              type="submit"
+              disabled={isDeleting}
+              className="rounded-sm bg-flame px-6 py-3 font-semibold text-bone transition hover:bg-flame/90"
+            >
+              {isDeleting ? "Deleting..." : "Delete this project"}
+            </button>
+          </Form>
+        </div>
+      </div>
+    </main>
   );
 }
 

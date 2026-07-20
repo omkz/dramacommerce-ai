@@ -1,5 +1,6 @@
 import { callQwenJson, type QwenUsage } from "~/services/qwen.server";
-import { validateEditorPackage } from "~/services/showrunner-validator.server";
+import { validateWithRepair } from "~/services/agent-json-repair.server";
+import { editorPackageSchema } from "~/services/domain/schemas.server";
 import type {
   EditorPackage,
   StoryBible,
@@ -11,9 +12,8 @@ export async function runEditorAgent(
   storyBible: StoryBible,
   onUsage?: (usage: QwenUsage) => void,
 ): Promise<EditorPackage> {
-  const rawResult = await callQwenJson({
-    system: `You are the Editor Agent for DramaCommerce AI. Return only valid JSON.`,
-    user: `
+  const system = `You are the Editor Agent for DramaCommerce AI. Return only valid JSON.`;
+  const user = `
 Create the final editing package for this short product drama ad.
 
 Story bible (compact production context — product facts, visual style, story core, constraints):
@@ -36,9 +36,13 @@ Rules:
 - Acknowledge storyCore.conflict (the problem the product resolves) before the payoff, so the caption reads as a resolved story, not a flat feature list.
 - Caption and CTA should mention the strongest product benefit or offer from productFacts when provided.
 - CTA should be short and merchant-friendly.
-`,
-    onUsage,
-  });
+`;
 
-  return validateEditorPackage(rawResult);
+  const rawResult = await callQwenJson({ system, user, onUsage });
+
+  return validateWithRepair(editorPackageSchema, rawResult, {
+    system,
+    user,
+    agentLabel: "Editor Agent",
+  });
 }

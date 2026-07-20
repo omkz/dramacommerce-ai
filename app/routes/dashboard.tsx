@@ -31,7 +31,10 @@ export default function Dashboard() {
   const { projects, stats } = useLoaderData<typeof loader>();
   const recentProjects = projects.slice(0, 5);
   const attentionProjects = projects
-    .filter((project) => hasFailedVideo(project) || hasInFlightVideo(project))
+    .filter(
+      (project) =>
+        project.schemaStatus === "invalid" || hasFailedVideo(project) || hasInFlightVideo(project),
+    )
     .slice(0, 4);
 
   return (
@@ -128,7 +131,9 @@ export default function Dashboard() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <p className="line-clamp-2 text-sm font-semibold text-bone">
-                          {project.showPlan.brief.productName}
+                          {project.schemaStatus === "invalid"
+                            ? "Project data needs regeneration"
+                            : project.showPlan.brief.productName}
                         </p>
                         <StatusPill label={getProjectHealth(project)} />
                       </div>
@@ -172,7 +177,11 @@ type DashboardStats = {
 };
 
 function buildDashboardStats(projects: SavedProject[]): DashboardStats {
-  const scenesTotal = projects.reduce(
+  // videoJobs/finalVideo stats are independent of show_plan validity;
+  // storyboard-derived stats (scenesTotal, referenceScenes) only make sense
+  // for projects whose show_plan actually parsed.
+  const validProjects = projects.filter((project) => project.schemaStatus === "ok");
+  const scenesTotal = validProjects.reduce(
     (total, project) => total + project.showPlan.storyboard.length,
     0,
   );
@@ -180,7 +189,7 @@ function buildDashboardStats(projects: SavedProject[]): DashboardStats {
   const scenesSucceeded = videoJobs.filter((job) => job.status === "SUCCEEDED").length;
   const inFlightScenes = videoJobs.filter(isInFlightVideoJob).length;
   const failedScenes = videoJobs.filter(isFailedVideoJob).length;
-  const referenceScenes = projects.reduce(
+  const referenceScenes = validProjects.reduce(
     (total, project) =>
       total +
       project.showPlan.storyboard.filter((scene) => scene.useProductReference)
@@ -211,6 +220,40 @@ function buildDashboardStats(projects: SavedProject[]): DashboardStats {
 }
 
 function ProjectRow({ project }: { project: SavedProject }) {
+  if (project.schemaStatus === "invalid") {
+    return (
+      <Link
+        to={`/projects/${project.id}`}
+        className="grid gap-4 py-5 transition hover:bg-paper/[0.03] md:grid-cols-[96px_minmax(0,1fr)_auto]"
+      >
+        <div className="flex h-24 items-center justify-center overflow-hidden rounded-sm border border-flame/30 bg-panel-raised">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-flame">
+            Invalid
+          </span>
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill label="Invalid" />
+            <span className="font-mono text-xs text-ash">
+              {new Date(project.createdAt).toLocaleDateString()}
+            </span>
+          </div>
+
+          <h2 className="mt-2 line-clamp-1 font-display text-xl font-medium text-bone">
+            Project data needs regeneration
+          </h2>
+
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-ash">
+            This project&rsquo;s saved data no longer matches the expected schema. Open it to delete and start over.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 text-sm md:justify-end" />
+      </Link>
+    );
+  }
+
   const successfulScenes =
     project.videoJobs?.filter((job) => job.status === "SUCCEEDED").length ?? 0;
   const totalScenes = project.showPlan.storyboard.length;
@@ -345,7 +388,7 @@ function EmptyState({
 }
 
 function StatusPill({ label }: { label: string }) {
-  const isAlert = label === "Failed";
+  const isAlert = label === "Failed" || label === "Invalid";
   const isActive = label === "Rendering";
   const isReady = label === "Completed";
 
@@ -367,6 +410,7 @@ function StatusPill({ label }: { label: string }) {
 }
 
 function getProjectHealth(project: SavedProject): string {
+  if (project.schemaStatus === "invalid") return "Invalid";
   if (hasFailedVideo(project)) return "Failed";
   if (hasInFlightVideo(project)) return "Rendering";
   if (project.finalVideo?.status === "SUCCEEDED") return "Completed";
@@ -374,6 +418,10 @@ function getProjectHealth(project: SavedProject): string {
 }
 
 function getProjectHealthDetail(project: SavedProject): string {
+  if (project.schemaStatus === "invalid") {
+    return "Saved data no longer matches the expected schema. Open the project to delete and regenerate.";
+  }
+
   if (hasFailedVideo(project)) {
     return "One or more render or stitch jobs failed. Open the project to retry.";
   }

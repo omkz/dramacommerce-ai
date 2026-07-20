@@ -2,7 +2,8 @@ import { callQwenJson, type QwenUsage } from "~/services/qwen.server";
 import { deriveBrandVoiceSkill } from "~/services/skills/brand-voice-skill.server";
 import { deriveCommerceAngleSkill } from "~/services/skills/commerce-angle-skill.server";
 import { formatSkillResult } from "~/services/skills/format-skill-result";
-import { validateStoryPackage } from "~/services/showrunner-validator.server";
+import { validateWithRepair } from "~/services/agent-json-repair.server";
+import { storyPackageSchema } from "~/services/domain/schemas.server";
 import type { ProductAnalysis, ProductBrief, StoryPackage } from "~/types/showrunner";
 
 export async function runStoryAgent(
@@ -13,9 +14,8 @@ export async function runStoryAgent(
   const commerceAngle = deriveCommerceAngleSkill(brief);
   const brandVoice = deriveBrandVoiceSkill(brief);
 
-  const rawResult = await callQwenJson({
-    system: `You are the Story Agent for DramaCommerce AI. Return only valid JSON.`,
-    user: `
+  const system = `You are the Story Agent for DramaCommerce AI. Return only valid JSON.`;
+  const user = `
 Create the narrative core for a short product drama ad.
 
 Product brief:
@@ -47,9 +47,13 @@ Rules:
 - Keep the product visible but naturally integrated.
 - Write for ${brief.platform} in a ${brief.mood} mood.
 - The voice-over should fit ${brief.duration}.
-`,
-    onUsage,
-  });
+`;
 
-  return validateStoryPackage(rawResult);
+  const rawResult = await callQwenJson({ system, user, onUsage });
+
+  return validateWithRepair(storyPackageSchema, rawResult, {
+    system,
+    user,
+    agentLabel: "Story Agent",
+  });
 }

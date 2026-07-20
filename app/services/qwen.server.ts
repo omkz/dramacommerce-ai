@@ -4,6 +4,7 @@ import {
   getQwenRequestTimeoutMs,
   getQwenVisionRequestTimeoutMs,
 } from "~/services/http/timeout-config.server";
+import { DomainValidationError } from "~/services/domain/errors.server";
 
 type QwenMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -298,6 +299,22 @@ export function getQwenErrorMessage(error: unknown): string {
 
   if (error instanceof QwenResponseError) {
     return "Qwen returned an invalid response. Try again, or adjust the prompt/schema if this keeps happening.";
+  }
+
+  if (error instanceof DomainValidationError) {
+    if (error.category === "invalid_ai_output") {
+      return "Qwen's generated show plan failed a consistency check across agents (e.g. reference-image usage vs. the brief). Try again.";
+    }
+
+    if (error.category === "invalid_persisted_data") {
+      return "This job's saved product brief no longer matches the expected format and can't be generated. Start a new brief.";
+    }
+
+    if (error.category === "invalid_worker_payload") {
+      return "This job's queue payload was invalid and can't be retried. Start a new brief.";
+    }
+
+    return "Qwen returned data that failed validation. Try again.";
   }
 
   if (error instanceof ZodError) {

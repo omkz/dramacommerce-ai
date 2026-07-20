@@ -78,6 +78,37 @@ export default function ProjectsIndex() {
         ) : (
           <section className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => {
+              if (project.schemaStatus === "invalid") {
+                return (
+                  <Link
+                    key={project.id}
+                    to={`/projects/${project.id}`}
+                    className="group overflow-hidden rounded-lg border border-flame/30 bg-panel transition hover:border-flame/50"
+                  >
+                    <div className="flex h-48 items-center justify-center bg-panel-raised text-flame">
+                      Invalid
+                    </div>
+
+                    <div className="p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <StatusPill label="Invalid" />
+                        <span className="font-mono text-xs text-ash">
+                          {new Date(project.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+
+                      <h2 className="mt-4 line-clamp-2 font-display text-xl font-medium text-bone">
+                        Project data needs regeneration
+                      </h2>
+
+                      <p className="mt-3 line-clamp-3 text-sm leading-6 text-ash">
+                        This project&rsquo;s saved data no longer matches the expected schema. Open it to delete and start over.
+                      </p>
+                    </div>
+                  </Link>
+                );
+              }
+
               const showPlan = project.showPlan;
 
               return (
@@ -169,7 +200,7 @@ export default function ProjectsIndex() {
 }
 
 function StatusPill({ label }: { label: string }) {
-  const isAlert = label === "Failed";
+  const isAlert = label === "Failed" || label === "Invalid";
   const isActive = label === "Rendering";
   const isReady = label === "Completed";
 
@@ -191,6 +222,7 @@ function StatusPill({ label }: { label: string }) {
 }
 
 function getProjectHealth(project: SavedProject): string {
+  if (project.schemaStatus === "invalid") return "Invalid";
   if (hasFailedVideo(project)) return "Failed";
   if (hasInFlightVideo(project)) return "Rendering";
   if (project.finalVideo?.status === "SUCCEEDED") return "Completed";

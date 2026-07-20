@@ -1,6 +1,7 @@
 import { callQwenJson } from "~/services/qwen.server";
 import type { QwenTool, QwenToolHandlers, QwenUsage } from "~/services/qwen.server";
-import { validateStoryboard } from "~/services/showrunner-validator.server";
+import { validateWithRepair } from "~/services/agent-json-repair.server";
+import { promptPackageSchema } from "~/services/domain/schemas.server";
 import type {
   DirectedScene,
   ProductBrief,
@@ -41,9 +42,8 @@ export async function runPromptAgent(
     get_wan_video_constraints: () => getWanVideoConstraints(brief.aspectRatio),
   };
 
-  const rawResult = await callQwenJson({
-    system: `You are the Video Prompt Agent for DramaCommerce AI. Before writing any videoPrompt text, call get_wan_video_constraints to learn the exact resolution, aspect ratio, and duration Wan will render — don't guess. Return only valid JSON.`,
-    user: `
+  const system = `You are the Video Prompt Agent for DramaCommerce AI. Before writing any videoPrompt text, call get_wan_video_constraints to learn the exact resolution, aspect ratio, and duration Wan will render — don't guess. Return only valid JSON.`;
+  const user = `
 Add Wan text-to-video prompts to each directed scene.
 
 Story bible (compact production context — product facts, visual style, story core, constraints):
@@ -86,12 +86,22 @@ Rules:
 - Avoid impossible product/logo details not present in the brief.
 - Respect productReferenceMode from the brief: disable means no image-to-video reference scenes, force means the final hero/reference scene should be written like a clean packshot animation.
 - When useProductReference is true for a scene, that scene's videoPrompt must describe motion that plausibly starts from a static product photo (e.g. the product rotating, camera pulling back/in) — not a different subject or setting, since the actual photo will be used as the literal first frame.
-`,
+`;
+
+  const rawResult = await callQwenJson({
+    system,
+    user,
     tools: [GET_WAN_VIDEO_CONSTRAINTS_TOOL],
     toolHandlers: promptAgentToolHandlers,
     requiredToolNames: ["get_wan_video_constraints"],
     onUsage,
   });
 
-  return validateStoryboard(rawResult);
+  const { storyboard } = await validateWithRepair(promptPackageSchema, rawResult, {
+    system,
+    user,
+    agentLabel: "Prompt Agent",
+  });
+
+  return storyboard;
 }

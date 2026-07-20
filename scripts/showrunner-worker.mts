@@ -12,7 +12,9 @@ import {
   updateShowrunnerJob,
 } from "~/services/project-store.server";
 import { deleteUploadedFile } from "~/services/image-upload.server";
-import { ExternalRequestError, toLogFields } from "~/services/http/http-client.server";
+import { ExternalRequestError, toLogFields as toHttpLogFields } from "~/services/http/http-client.server";
+import { showrunnerGenerateJobDataSchema } from "~/services/domain/queue-payload-schemas.server";
+import { DomainValidationError, buildDomainValidationError, toLogFields as toDomainLogFields } from "~/services/domain/errors.server";
 
 const CONCURRENCY = Number(process.env.SHOWRUNNER_WORKER_CONCURRENCY || "2");
 const connection = getRedisConnection();
@@ -24,28 +26,42 @@ const worker = new Worker<ShowrunnerGenerateJobData>(
       throw new Error(`Unknown showrunner job: ${job.name}`);
     }
 
+    // BullMQ redelivery is at-least-once and this worker never wrote
+    // job.data itself (the outbox dispatcher did) — a malformed payload
+    // here would otherwise crash on job.data.showrunnerJobId being the
+    // wrong type deep inside generateShowPlan instead of failing cleanly.
+    const payloadResult = showrunnerGenerateJobDataSchema.safeParse(job.data);
+
+    if (!payloadResult.success) {
+      const payloadError = buildDomainValidationError(
+        "invalid_worker_payload",
+        "Invalid showrunner.generate job payload",
+        payloadResult.error,
+      );
+      console.error(`[showrunner-worker] job ${job.id} has an invalid payload:`, toDomainLogFields(payloadError));
+      throw new UnrecoverableError(payloadError.message);
+    }
+
+    const { showrunnerJobId, userId } = payloadResult.data;
+
     try {
-      await runShowrunnerJob(job.data.showrunnerJobId, job.data.userId);
+      await runShowrunnerJob(showrunnerJobId, userId);
     } catch (error) {
       const permanent = isPermanentError(error);
 
       if (permanent || !willRetry(job)) {
-        await markShowrunnerJobFailed(
-          job.data.showrunnerJobId,
-          job.data.userId,
-          error,
-        );
+        await markShowrunnerJobFailed(showrunnerJobId, userId, error);
       }
 
       console.error(
         `[showrunner-worker] job ${job.id} failed${permanent ? " (permanent)" : ""}:`,
-        toLogFields(error),
+        error instanceof DomainValidationError ? toDomainLogFields(error) : toHttpLogFields(error),
       );
 
       // BullMQ special-cases UnrecoverableError: it skips remaining
       // configured retry attempts instead of burning a paid Qwen call on an
       // error that can't succeed (bad API key, missing config, invalid URL
-      // protocol).
+      // protocol, corrupted persisted brief).
       throw permanent ? new UnrecoverableError(getQwenErrorMessage(error)) : error;
     }
   },
@@ -83,6 +99,14 @@ function isPermanentError(error: unknown): boolean {
     return !error.retryable;
   }
 
+  // A malformed job payload or corrupted persisted brief will never become
+  // valid on retry; an invalid AI-output failure (a cross-agent consistency
+  // check on the assembled show plan) is left retryable since a full
+  // pipeline re-run is genuinely generative and could turn out differently.
+  if (error instanceof DomainValidationError) {
+    return error.category === "invalid_worker_payload" || error.category === "invalid_persisted_data";
+  }
+
   return error instanceof QwenConfigurationError;
 }
 
@@ -107,6 +131,13 @@ async function runShowrunnerJob(
       `Showrunner job ${showrunnerJobId} already SUCCEEDED (projectId ${job.projectId}) — skipping duplicate delivery.`,
     );
     return;
+  }
+
+  if (job.briefSchemaStatus === "invalid") {
+    throw new DomainValidationError(
+      "invalid_persisted_data",
+      "Showrunner job's saved brief no longer matches the expected schema.",
+    );
   }
 
   const showPlan = await generateShowPlan(job.brief, async (stage) => {

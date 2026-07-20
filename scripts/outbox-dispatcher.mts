@@ -6,15 +6,19 @@ import {
 import {
   SHOWRUNNER_QUEUE_NAME,
   enqueueShowrunnerGenerateJob,
-  type ShowrunnerGenerateJobData,
 } from "~/services/showrunner-queue.server";
 import {
   VIDEO_QUEUE_NAME,
   enqueueVideoCreateJob,
   enqueueVideoStitchJob,
-  type VideoCreateJobData,
-  type VideoStitchJobData,
 } from "~/services/video-queue.server";
+import {
+  showrunnerGenerateJobDataSchema,
+  videoCreateJobDataSchema,
+  videoStitchJobDataSchema,
+} from "~/services/domain/queue-payload-schemas.server";
+import { buildDomainValidationError } from "~/services/domain/errors.server";
+import type { z } from "zod";
 
 const POLL_INTERVAL_MS = Number(process.env.OUTBOX_DISPATCH_INTERVAL_MS || "2000");
 const BATCH_SIZE = Number(process.env.OUTBOX_DISPATCH_BATCH_SIZE || "25");
@@ -22,19 +26,46 @@ const CLEANUP_INTERVAL_MS = Number(
   process.env.OUTBOX_CLEANUP_INTERVAL_MS || 60 * 60 * 1000,
 );
 
+// outbox_events.payload is jsonb — Postgres guarantees valid JSON, never a
+// guaranteed-correct shape (a schema drift between when the event was
+// written and when it's dispatched, or direct DB tampering, are both
+// possible in principle). Validating here means a malformed payload never
+// reaches BullMQ at all; it's treated as any other dispatch failure
+// (retried per the existing outbox backoff, eventually marked FAILED) — see
+// CLAUDE.md for why the outbox dispatcher doesn't have its own permanent-
+// vs-retryable distinction the way the BullMQ workers do.
+function validated<T>(schema: z.ZodType<T>, payload: unknown, contextLabel: string): T {
+  const result = schema.safeParse(payload);
+
+  if (!result.success) {
+    throw buildDomainValidationError("invalid_worker_payload", contextLabel, result.error);
+  }
+
+  return result.data;
+}
+
 // The only place in the app that calls queue.add() — every other write path
 // goes through the outbox instead. Keyed by (queue, jobName) exactly as
 // written by project-store.server.ts's *WithOutbox functions.
 const DISPATCH_HANDLERS: DispatchHandlerRegistry = {
   [SHOWRUNNER_QUEUE_NAME]: {
     "showrunner.generate": (payload, jobId) =>
-      enqueueShowrunnerGenerateJob(payload as ShowrunnerGenerateJobData, jobId),
+      enqueueShowrunnerGenerateJob(
+        validated(showrunnerGenerateJobDataSchema, payload, "Invalid showrunner.generate outbox payload"),
+        jobId,
+      ),
   },
   [VIDEO_QUEUE_NAME]: {
     "video.create": (payload, jobId) =>
-      enqueueVideoCreateJob(payload as VideoCreateJobData, jobId),
+      enqueueVideoCreateJob(
+        validated(videoCreateJobDataSchema, payload, "Invalid video.create outbox payload"),
+        jobId,
+      ),
     "video.stitch": (payload, jobId) =>
-      enqueueVideoStitchJob(payload as VideoStitchJobData, jobId),
+      enqueueVideoStitchJob(
+        validated(videoStitchJobDataSchema, payload, "Invalid video.stitch outbox payload"),
+        jobId,
+      ),
   },
 };
 

@@ -10,13 +10,20 @@ import {
   saveGeneratedFile,
   readManagedAsDataUrl,
   downloadToPath,
+  isManagedRef,
 } from "./lib/media-storage.mjs";
+import { getMaxSceneVoiceOverChars, getWanSceneDurationSeconds } from "./lib/limits.mjs";
 import { ExternalRequestError, requestJson, toLogFields } from "./lib/http-client.mjs";
 import {
   getWanCreateTimeoutMs,
   getWanPollTimeoutMs,
   getTtsRequestTimeoutMs,
 } from "./lib/timeout-config.mjs";
+import {
+  videoCreateJobDataSchema,
+  videoPollJobDataSchema,
+  videoStitchJobDataSchema,
+} from "./lib/video-job-schemas.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -50,22 +57,48 @@ const pool = new pg.Pool({ connectionString: databaseUrl });
 const connection = getRedisConnection(redisUrl);
 const queue = new Queue(VIDEO_QUEUE_NAME, { connection });
 
+// BullMQ redelivery is at-least-once and this worker never wrote job.data
+// itself (the outbox dispatcher did, for video.create/video.stitch;
+// video.poll is self-rescheduled by this same worker — see CLAUDE.md) — a
+// malformed payload here would otherwise crash deep inside createWanTask/
+// pollWanTask/stitchFinalVideo instead of failing cleanly. Reuses
+// ExternalRequestError's classification (permanent_client -> not retryable)
+// so this participates in the exact same UnrecoverableError path as any
+// other permanent failure below, with no new classification logic needed.
+function validateJobData(schema, data, jobName) {
+  const result = schema.safeParse(data);
+
+  if (result.success) {
+    return result.data;
+  }
+
+  const issues = result.error.issues
+    .slice(0, 5)
+    .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.code}`)
+    .join("; ");
+
+  throw new ExternalRequestError("permanent_client", `Invalid ${jobName} job payload: ${issues}`, {
+    provider: "queue",
+    operation: jobName,
+  });
+}
+
 const worker = new Worker(
   VIDEO_QUEUE_NAME,
   async (job) => {
     try {
       if (job.name === "video.create") {
-        await createWanTask(job.data);
+        await createWanTask(validateJobData(videoCreateJobDataSchema, job.data, job.name));
         return;
       }
 
       if (job.name === "video.poll") {
-        await pollWanTask(job.data);
+        await pollWanTask(validateJobData(videoPollJobDataSchema, job.data, job.name));
         return;
       }
 
       if (job.name === "video.stitch") {
-        await stitchFinalVideo(job.data);
+        await stitchFinalVideo(validateJobData(videoStitchJobDataSchema, job.data, job.name));
         return;
       }
 
@@ -230,6 +263,31 @@ async function createWanTask({
   aspectRatio,
   generationId,
 }) {
+  // Render-readiness pre-flight, immediately before any Wan call: the
+  // payload already passed shape validation (validateJobData above), but
+  // the duration-aware voice-over rule and the reference-image invariant
+  // are business-rule checks, not shape checks — a merchant override
+  // (create-video-task's prompt/voiceOver override) or a stale scene edit
+  // could still violate them. Both fail permanently (retrying with the same
+  // data can't fix either).
+  const maxVoiceOverChars = getMaxSceneVoiceOverChars();
+
+  if (voiceOver.length > maxVoiceOverChars) {
+    throw new ExternalRequestError(
+      "permanent_client",
+      `Scene voice-over (${voiceOver.length} chars) exceeds the ${maxVoiceOverChars}-character limit for a ${getWanSceneDurationSeconds()}s scene.`,
+      { provider: "render-readiness", operation: "video.create" },
+    );
+  }
+
+  if (useProductReference && !isManagedRef(productImageUrl)) {
+    throw new ExternalRequestError(
+      "permanent_client",
+      "Scene requests useProductReference but has no valid stable product image reference.",
+      { provider: "render-readiness", operation: "video.create" },
+    );
+  }
+
   const claim = await claimGenerationForWanCall(projectId, scene, generationId);
 
   if (claim === "stale") {

@@ -8,6 +8,8 @@ import {
   type SaveKeyOptions,
 } from "~/services/storage/keys";
 import type { HealthCheckResult, MediaStorageDriver } from "~/services/storage/types";
+import { ExternalRequestError, wrapProviderError } from "~/services/http/http-client.server";
+import { getOssRequestTimeoutMs } from "~/services/http/timeout-config.server";
 
 // Narrow structural subset of the ali-oss client we actually use, so tests
 // can inject a fake without needing a real OSS connection or mocking the
@@ -22,7 +24,6 @@ export type OssClientLike = {
 };
 
 const DEFAULT_SIGNED_URL_EXPIRES_SECONDS = 3600;
-const DEFAULT_CLIENT_TIMEOUT_MS = 10_000;
 
 export function createOssStorageDriver(overrides?: {
   client?: OssClientLike;
@@ -43,7 +44,7 @@ export function createOssStorageDriver(overrides?: {
       try {
         await getClient().put(key, buffer);
       } catch (error) {
-        throw new Error(`OSS upload failed: ${describeOssError(error)}`);
+        throw wrapProviderError(error, { provider: "oss", operation: "upload" });
       }
 
       return key;
@@ -55,7 +56,7 @@ export function createOssStorageDriver(overrides?: {
       try {
         await getClient().put(key, localPath);
       } catch (error) {
-        throw new Error(`OSS upload failed: ${describeOssError(error)}`);
+        throw wrapProviderError(error, { provider: "oss", operation: "upload" });
       }
 
       return key;
@@ -68,7 +69,7 @@ export function createOssStorageDriver(overrides?: {
         const result = await getClient().get(toRelativeKey(ref));
         return result.content;
       } catch (error) {
-        throw new Error(`OSS read failed: ${describeOssError(error)}`);
+        throw wrapProviderError(error, { provider: "oss", operation: "read" });
       }
     },
 
@@ -90,7 +91,7 @@ export function createOssStorageDriver(overrides?: {
       try {
         await getClient().delete(toRelativeKey(ref));
       } catch (error) {
-        console.error(`OSS delete failed for ${ref}:`, describeOssError(error));
+        console.error(`OSS delete failed for ${ref}:`, wrapProviderError(error, { provider: "oss", operation: "delete" }).message);
       }
     },
 
@@ -128,7 +129,7 @@ export function createOssStorageDriver(overrides?: {
       } catch (error) {
         return {
           status: "error",
-          message: `OSS connectivity check failed: ${describeOssError(error)}`,
+          message: `OSS connectivity check failed: ${wrapProviderError(error, { provider: "oss", operation: "healthCheck" }).message}`,
         };
       }
     },
@@ -141,7 +142,10 @@ function buildKey(options: SaveKeyOptions): string {
 
 function assertManaged(ref: string): void {
   if (!isManagedRef(ref)) {
-    throw new Error(`Invalid storage reference: ${ref}`);
+    throw new ExternalRequestError("permanent_client", `Invalid storage reference: ${ref}`, {
+      provider: "storage",
+      operation: "read",
+    });
   }
 }
 
@@ -159,7 +163,7 @@ function createRealClient(): OssClientLike {
     accessKeySecret,
     endpoint,
     secure: true,
-    timeout: DEFAULT_CLIENT_TIMEOUT_MS,
+    timeout: getOssRequestTimeoutMs(),
   }) as unknown as OssClientLike;
 }
 
@@ -167,28 +171,12 @@ function requireEnv(name: string): string {
   const value = process.env[name];
 
   if (!value) {
-    throw new Error(`${name} is required when MEDIA_STORAGE_DRIVER=oss.`);
+    throw new ExternalRequestError(
+      "auth_config",
+      `${name} is required when MEDIA_STORAGE_DRIVER=oss.`,
+      { provider: "oss", operation: "config" },
+    );
   }
 
   return value;
-}
-
-// Never include the raw error object (which can carry request headers/auth
-// info in some SDK error shapes) — only a whitelisted set of safe fields.
-function describeOssError(error: unknown): string {
-  if (error && typeof error === "object") {
-    const err = error as { message?: unknown; code?: unknown; status?: unknown; name?: unknown };
-    const parts = [
-      typeof err.name === "string" ? err.name : undefined,
-      typeof err.code === "string" ? `code=${err.code}` : undefined,
-      typeof err.status === "number" ? `status=${err.status}` : undefined,
-      typeof err.message === "string" ? err.message : undefined,
-    ].filter(Boolean);
-
-    if (parts.length > 0) {
-      return parts.join(" ");
-    }
-  }
-
-  return "Unknown OSS error";
 }

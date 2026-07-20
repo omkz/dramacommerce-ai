@@ -1,4 +1,4 @@
-import { Queue, Worker } from "bullmq";
+import { Queue, UnrecoverableError, Worker } from "bullmq";
 import pg from "pg";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -11,6 +11,12 @@ import {
   readManagedAsDataUrl,
   downloadToPath,
 } from "./lib/media-storage.mjs";
+import { ExternalRequestError, requestJson, toLogFields } from "./lib/http-client.mjs";
+import {
+  getWanCreateTimeoutMs,
+  getWanPollTimeoutMs,
+  getTtsRequestTimeoutMs,
+} from "./lib/timeout-config.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -65,8 +71,22 @@ const worker = new Worker(
 
       throw new Error(`Unknown video job: ${job.name}`);
     } catch (error) {
-      await markFailedIfRetryExhausted(job, error);
-      throw error;
+      const permanent = isPermanentError(error);
+
+      if (permanent || !willRetry(job)) {
+        await markFailedIfRetryExhausted(job, error);
+      }
+
+      console.error(
+        `[video-worker] ${job.name} ${job.id} failed${permanent ? " (permanent)" : ""}:`,
+        toLogFields(error),
+      );
+
+      // BullMQ special-cases UnrecoverableError: it skips remaining
+      // configured retry attempts immediately instead of burning them on an
+      // error that will never succeed (bad API key, invalid URL protocol,
+      // oversized/malformed response, missing config).
+      throw permanent ? new UnrecoverableError(getWorkerFailureMessage(error)) : error;
     }
   },
   {
@@ -116,6 +136,20 @@ function willRetry(job) {
   const maxAttempts = job.opts.attempts ?? 1;
 
   return job.attemptsMade + 1 < maxAttempts;
+}
+
+// Only ExternalRequestError (thrown by the shared http-client for every Wan/
+// TTS/download call, and by configError() below for missing env vars) is
+// classified — local errors (ffmpeg missing, temp-dir I/O) fall through to
+// the pre-existing "retry until attempts exhausted" behavior, since a
+// transient exec failure retried is desirable and this task's classification
+// scope is specifically the network/provider error categories.
+function isPermanentError(error) {
+  return error instanceof ExternalRequestError && !error.retryable;
+}
+
+function configError(provider, operation, message) {
+  return new ExternalRequestError("auth_config", message, { provider, operation });
 }
 
 // Scoped to generationId so an old job's exhausted retries can't mark a
@@ -425,11 +459,11 @@ async function narrateAndMuxScene(
     // independent — run them concurrently instead of waiting on TTS
     // before even starting the (much larger) video download.
     const [, audioUrl] = await Promise.all([
-      downloadFile(videoUrl, videoPath),
+      downloadFile(videoUrl, videoPath, ["video/"]),
       synthesizeVoiceOver(voiceOver),
     ]);
 
-    await downloadFile(audioUrl, audioPath);
+    await downloadFile(audioUrl, audioPath, ["audio/"]);
 
     const outputFilename = `${randomUUID()}.mp4`;
     const muxedOutputPath = path.join(tempDir, `muxed-${outputFilename}`);
@@ -453,7 +487,7 @@ async function narrateAndMuxScene(
           "product-image" + path.extname(productImageUrl),
         );
         const overlaidPath = path.join(tempDir, outputFilename);
-        await downloadFile(productImageUrl, productImagePath);
+        await downloadFile(productImageUrl, productImagePath, ["image/"]);
         await overlayProductImage(muxedOutputPath, productImagePath, overlaidPath);
         finalPath = overlaidPath;
       } catch (error) {
@@ -531,12 +565,15 @@ async function synthesizeVoiceOver(text) {
   const voice = process.env.DASHSCOPE_TTS_VOICE || "Cherry";
 
   if (!apiKey || !baseUrl) {
-    throw new Error("TTS environment variables are not configured.");
+    throw configError("tts", "synthesize", "TTS environment variables are not configured.");
   }
 
-  const response = await fetch(
-    `${baseUrl}/api/v1/services/aigc/multimodal-generation/generation`,
-    {
+  const { data } = await requestJson({
+    url: `${baseUrl}/api/v1/services/aigc/multimodal-generation/generation`,
+    timeoutMs: getTtsRequestTimeoutMs(),
+    provider: "tts",
+    operation: "synthesize",
+    init: {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -551,18 +588,15 @@ async function synthesizeVoiceOver(text) {
         },
       }),
     },
-  );
-
-  const data = await readJsonResponse(response);
-
-  if (!response.ok) {
-    throw new Error(data.message || data.code || `TTS API error: ${response.status}`);
-  }
+  });
 
   const audioUrl = data.output?.audio?.url;
 
   if (!audioUrl) {
-    throw new Error("TTS did not return an audio URL.");
+    throw new ExternalRequestError("invalid_response", "TTS did not return an audio URL.", {
+      provider: "tts",
+      operation: "synthesize",
+    });
   }
 
   return audioUrl;
@@ -614,7 +648,7 @@ async function stitchFinalVideo({ projectId, stitchGenerationId }) {
     const clipPaths = await Promise.all(
       rows.map(async (row) => {
         const clipPath = path.join(tempDir, `scene-${row.scene}.mp4`);
-        await downloadFile(row.video_url, clipPath);
+        await downloadFile(row.video_url, clipPath, ["video/"]);
         return clipPath;
       }),
     );
@@ -670,14 +704,16 @@ async function updateFinalVideo(projectId, stitchGenerationId, { status, videoUr
   }
 }
 
-async function downloadFile(url, destPath) {
+async function downloadFile(url, destPath, expectedContentTypePrefixes) {
   // Scene/final clips are stored via the media storage abstraction (local
   // disk or OSS, depending on MEDIA_STORAGE_DRIVER) and referenced by a
   // storage key or legacy "/uploads/..." path rather than a fetchable URL —
-  // downloadToPath reads those straight from storage. Everything else
-  // (Wan clip URLs, TTS audio URLs) is a real external URL, downloaded with
-  // a timeout and a maximum size to bound worker memory/disk usage.
-  await downloadToPath(url, destPath);
+  // downloadToPath reads those straight from storage (content-type
+  // validation doesn't apply there). Everything else (Wan clip URLs, TTS
+  // audio URLs) is a real external URL, downloaded with a timeout, a maximum
+  // size, and (when provided) a soft content-type check before the file is
+  // ever handed to ffmpeg.
+  await downloadToPath(url, destPath, { expectedContentTypePrefixes });
 }
 
 async function runFfmpegConcat(listPath, outputPath) {
@@ -729,7 +765,7 @@ async function createWanTextToVideoTask(prompt, imgDataUrl, aspectRatio) {
     : process.env.WAN_VIDEO_MODEL || "wan2.1-t2v-turbo";
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Wan video environment variables are not configured.");
+    throw configError("wan", "video.create", "Wan video environment variables are not configured.");
   }
 
   const parameters = {
@@ -746,9 +782,21 @@ async function createWanTextToVideoTask(prompt, imgDataUrl, aspectRatio) {
     parameters.size = getWanLegacyT2vSize(aspectRatio);
   }
 
-  const response = await fetch(
-    `${baseUrl}/api/v1/services/aigc/video-generation/video-synthesis`,
-    {
+  // A timeout here is ambiguous: Wan may have already accepted and started
+  // the task before the client gave up waiting. We deliberately do not
+  // retry-create a replacement task from this function — the caller
+  // (claimGenerationForWanCall in createWanTask, above) already flipped this
+  // generation's row to RUNNING *before* this call, so a retried "video.create"
+  // job re-enters createWanTask, finds the row already RUNNING, and skips
+  // calling Wan again (within WAN_TASK_STALE_RUNNING_GRACE_MS) rather than
+  // risking a duplicate paid task. See that function's comment for the full
+  // tradeoff once the grace period elapses.
+  const { data } = await requestJson({
+    url: `${baseUrl}/api/v1/services/aigc/video-generation/video-synthesis`,
+    timeoutMs: getWanCreateTimeoutMs(),
+    provider: "wan",
+    operation: "video.create",
+    init: {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -761,18 +809,15 @@ async function createWanTextToVideoTask(prompt, imgDataUrl, aspectRatio) {
         parameters,
       }),
     },
-  );
-
-  const data = await readJsonResponse(response);
-
-  if (!response.ok) {
-    throw new Error(data.message || data.code || `Wan API error: ${response.status}`);
-  }
+  });
 
   const taskId = data.output?.task_id;
 
   if (!taskId) {
-    throw new Error("Wan did not return a task_id.");
+    throw new ExternalRequestError("invalid_response", "Wan did not return a task_id.", {
+      provider: "wan",
+      operation: "video.create",
+    });
   }
 
   return {
@@ -786,28 +831,29 @@ async function queryWanVideoTask(taskId) {
   const baseUrl = process.env.DASHSCOPE_VIDEO_BASE_URL;
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Wan video environment variables are not configured.");
+    throw configError("wan", "video.poll", "Wan video environment variables are not configured.");
   }
 
-  const response = await fetch(`${baseUrl}/api/v1/tasks/${taskId}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
+  const { data } = await requestJson({
+    url: `${baseUrl}/api/v1/tasks/${taskId}`,
+    timeoutMs: getWanPollTimeoutMs(),
+    provider: "wan",
+    operation: "video.poll",
+    init: {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
     },
   });
-
-  const data = await readJsonResponse(response);
-
-  if (!response.ok) {
-    throw new Error(
-      data.message || data.code || `Wan task query error: ${response.status}`,
-    );
-  }
 
   const output = data.output;
 
   if (!output?.task_id) {
-    throw new Error("Wan returned an invalid task result.");
+    throw new ExternalRequestError("invalid_response", "Wan returned an invalid task result.", {
+      provider: "wan",
+      operation: "video.poll",
+    });
   }
 
   return {
@@ -840,51 +886,60 @@ function normalizeStatus(status) {
   return "UNKNOWN";
 }
 
-async function readJsonResponse(response) {
-  const text = await response.text();
-
-  if (!text.trim()) {
-    throw new Error(
-      `Wan API returned an empty response. Status: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(
-      `Wan API returned non-JSON response. Status: ${response.status} ${response.statusText}. Body: ${text.slice(
-        0,
-        500,
-      )}`,
-    );
-  }
-}
-
+// Friendly, DB-safe error message. ExternalRequestError's own .message is
+// already status/category-based (no raw provider body) — this just adds a
+// human-actionable hint per category/provider, plus the sanitized, length-
+// capped providerMessage excerpt when one is available.
 function getWorkerFailureMessage(error) {
+  if (error instanceof ExternalRequestError) {
+    const hint = getExternalErrorHint(error);
+    const detail = error.providerMessage ? ` (${error.providerMessage})` : "";
+    return `${hint}${detail}`;
+  }
+
   const message = getErrorMessage(error);
-
-  if (message.includes("Wan video environment variables")) {
-    return "Wan video is not configured. Set DASHSCOPE_API_KEY and DASHSCOPE_VIDEO_BASE_URL, then retry this scene.";
-  }
-
-  if (message.includes("TTS environment variables")) {
-    return "Voice-over failed because TTS is not configured. Set DASHSCOPE_API_KEY and DASHSCOPE_TTS_BASE_URL or DASHSCOPE_VIDEO_BASE_URL.";
-  }
 
   if (message.includes("ffmpeg") || error?.code === "ENOENT") {
     return "Video processing failed because ffmpeg is not available on the worker server. Install ffmpeg and retry.";
   }
 
-  if (message.includes("Failed to download clip")) {
-    return "Video processing failed while downloading a generated clip. Check that provider URLs or local uploads are reachable from the worker.";
-  }
-
-  if (message.includes("non-JSON response") || message.includes("empty response")) {
-    return `Provider returned an invalid response. ${message}`;
-  }
-
   return message;
+}
+
+function getExternalErrorHint(error) {
+  if (error.provider === "wan" && error.category === "auth_config" && !error.status) {
+    return "Wan video is not configured. Set DASHSCOPE_API_KEY and DASHSCOPE_VIDEO_BASE_URL, then retry this scene.";
+  }
+
+  if (error.provider === "tts" && error.category === "auth_config" && !error.status) {
+    return "Voice-over failed because TTS is not configured. Set DASHSCOPE_API_KEY and DASHSCOPE_TTS_BASE_URL or DASHSCOPE_VIDEO_BASE_URL.";
+  }
+
+  if (error.category === "auth_config") {
+    return `${error.provider} rejected the request (authentication/configuration). Check the API key and base URL.`;
+  }
+
+  if (error.category === "timeout") {
+    return `${error.provider} ${error.operation} timed out after ${error.timeoutMs}ms. The provider may be slow or unreachable.`;
+  }
+
+  if (error.category === "rate_limit") {
+    return `${error.provider} rate limit reached. This will be retried automatically.`;
+  }
+
+  if (error.category === "oversized_response") {
+    return `${error.provider} response exceeded the configured size limit.`;
+  }
+
+  if (error.category === "invalid_response") {
+    return `${error.provider} returned an unexpected response.`;
+  }
+
+  if (error.category === "network") {
+    return `Could not reach ${error.provider} (${error.operation}). This will be retried automatically.`;
+  }
+
+  return error.message;
 }
 
 function getErrorMessage(error) {

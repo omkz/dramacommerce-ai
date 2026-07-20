@@ -1,4 +1,9 @@
 import { ZodError } from "zod";
+import { ExternalRequestError, requestJson } from "~/services/http/http-client.server";
+import {
+  getQwenRequestTimeoutMs,
+  getQwenVisionRequestTimeoutMs,
+} from "~/services/http/timeout-config.server";
 
 type QwenMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -64,16 +69,6 @@ export class QwenConfigurationError extends Error {
   }
 }
 
-export class QwenApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(`Qwen API error: ${status} ${message}`);
-    this.name = "QwenApiError";
-  }
-}
-
 export class QwenResponseError extends Error {
   constructor(message: string) {
     super(message);
@@ -116,43 +111,43 @@ export async function callQwenJson({
       (toolName) => !calledToolNames.has(toolName),
     );
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const { data } = await requestJson<QwenChatResponse>({
+      url: `${baseUrl}/chat/completions`,
+      timeoutMs: getQwenRequestTimeoutMs(),
+      provider: "qwen",
+      operation: "chat.completions",
+      init: {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.5,
+          // Qwen's OpenAI-compatible endpoint hangs indefinitely (confirmed
+          // live — the request never returns) when response_format:json_object
+          // is combined with tools. Only force JSON mode on tool-free calls;
+          // agents using tools rely on the "Return only valid JSON" system
+          // prompt instruction instead, same as before response_format existed.
+          ...(tools
+            ? {
+                tools,
+                ...(requiredToolName
+                  ? {
+                      tool_choice: {
+                        type: "function",
+                        function: { name: requiredToolName },
+                      },
+                    }
+                  : {}),
+              }
+            : { response_format: { type: "json_object" } }),
+        }),
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.5,
-        // Qwen's OpenAI-compatible endpoint hangs indefinitely (confirmed
-        // live — the request never returns) when response_format:json_object
-        // is combined with tools. Only force JSON mode on tool-free calls;
-        // agents using tools rely on the "Return only valid JSON" system
-        // prompt instruction instead, same as before response_format existed.
-        ...(tools
-          ? {
-              tools,
-              ...(requiredToolName
-                ? {
-                    tool_choice: {
-                      type: "function",
-                      function: { name: requiredToolName },
-                    },
-                  }
-                : {}),
-            }
-          : { response_format: { type: "json_object" } }),
-      }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new QwenApiError(response.status, errorText);
-    }
-
-    const data = (await response.json()) as QwenChatResponse;
     const message = data.choices?.[0]?.message;
     usage = addUsage(usage, data.usage);
 
@@ -236,35 +231,35 @@ export async function callQwenVisionJson({
     throw new QwenConfigurationError();
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const { data } = await requestJson<QwenChatResponse>({
+    url: `${baseUrl}/chat/completions`,
+    timeoutMs: getQwenVisionRequestTimeoutMs(),
+    provider: "qwen",
+    operation: "vision.chat.completions",
+    init: {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: user },
+              { type: "image_url", image_url: { url: imageDataUrl } },
+            ],
+          },
+        ],
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      }),
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: user },
-            { type: "image_url", image_url: { url: imageDataUrl } },
-          ],
-        },
-      ],
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-    }),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new QwenApiError(response.status, errorText);
-  }
-
-  const data = (await response.json()) as QwenChatResponse;
   const message = data.choices?.[0]?.message;
 
   if (!message?.content) {
@@ -285,8 +280,20 @@ export function getQwenErrorMessage(error: unknown): string {
     return "Qwen is not configured. Set DASHSCOPE_API_KEY and QWEN_BASE_URL before generating.";
   }
 
-  if (error instanceof QwenApiError) {
-    return `Qwen request failed with status ${error.status}. Check the API key, base URL, model, or provider status.`;
+  if (error instanceof ExternalRequestError) {
+    if (error.category === "auth_config") {
+      return "Qwen request failed authentication. Check DASHSCOPE_API_KEY and QWEN_BASE_URL.";
+    }
+
+    if (error.category === "timeout") {
+      return `Qwen request timed out after ${error.timeoutMs}ms. The provider may be slow or unreachable — try again.`;
+    }
+
+    if (error.category === "rate_limit") {
+      return "Qwen rate limit reached. Try again shortly.";
+    }
+
+    return `Qwen request failed (${error.category}${error.status ? `, status ${error.status}` : ""}). Check the API key, base URL, model, or provider status.`;
   }
 
   if (error instanceof QwenResponseError) {

@@ -1,17 +1,18 @@
-import { Worker, type Job } from "bullmq";
+import { UnrecoverableError, Worker, type Job } from "bullmq";
 import { getRedisConnection } from "~/services/video-queue.server";
 import {
   SHOWRUNNER_QUEUE_NAME,
   type ShowrunnerGenerateJobData,
 } from "~/services/showrunner-queue.server";
 import { generateShowPlan } from "~/services/showrunner.server";
-import { getQwenErrorMessage } from "~/services/qwen.server";
+import { getQwenErrorMessage, QwenConfigurationError } from "~/services/qwen.server";
 import {
   getShowrunnerJob,
   saveProjectAndCompleteShowrunnerJob,
   updateShowrunnerJob,
 } from "~/services/project-store.server";
 import { deleteUploadedFile } from "~/services/image-upload.server";
+import { ExternalRequestError, toLogFields } from "~/services/http/http-client.server";
 
 const CONCURRENCY = Number(process.env.SHOWRUNNER_WORKER_CONCURRENCY || "2");
 const connection = getRedisConnection();
@@ -26,7 +27,9 @@ const worker = new Worker<ShowrunnerGenerateJobData>(
     try {
       await runShowrunnerJob(job.data.showrunnerJobId, job.data.userId);
     } catch (error) {
-      if (!willRetry(job)) {
+      const permanent = isPermanentError(error);
+
+      if (permanent || !willRetry(job)) {
         await markShowrunnerJobFailed(
           job.data.showrunnerJobId,
           job.data.userId,
@@ -34,7 +37,16 @@ const worker = new Worker<ShowrunnerGenerateJobData>(
         );
       }
 
-      throw error;
+      console.error(
+        `[showrunner-worker] job ${job.id} failed${permanent ? " (permanent)" : ""}:`,
+        toLogFields(error),
+      );
+
+      // BullMQ special-cases UnrecoverableError: it skips remaining
+      // configured retry attempts instead of burning a paid Qwen call on an
+      // error that can't succeed (bad API key, missing config, invalid URL
+      // protocol).
+      throw permanent ? new UnrecoverableError(getQwenErrorMessage(error)) : error;
     }
   },
   {
@@ -59,6 +71,19 @@ function willRetry(job: Job): boolean {
   const maxAttempts = job.opts.attempts ?? 1;
 
   return job.attemptsMade + 1 < maxAttempts;
+}
+
+// Only network-layer failures (ExternalRequestError) and missing
+// configuration are classified as permanent here — a malformed/empty JSON
+// body from Qwen's own generative output (QwenResponseError) or a schema
+// mismatch (ZodError) could plausibly succeed on a second sampling, so those
+// are left to the existing attempts-based retry rather than short-circuited.
+function isPermanentError(error: unknown): boolean {
+  if (error instanceof ExternalRequestError) {
+    return !error.retryable;
+  }
+
+  return error instanceof QwenConfigurationError;
 }
 
 async function runShowrunnerJob(

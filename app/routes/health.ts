@@ -4,6 +4,8 @@ import { pool } from "~/services/db.server";
 import { getVideoQueue } from "~/services/video-queue.server";
 import { getMediaStorage } from "~/services/storage/media-storage.server";
 import { getOutboxStats } from "~/services/outbox.server";
+import { getHealthCheckTimeoutMs } from "~/services/http/timeout-config.server";
+import { withTimeout } from "~/services/http/with-timeout.server";
 
 const execFileAsync = promisify(execFile);
 
@@ -19,14 +21,33 @@ type OutboxHealthCheck = HealthCheck & {
   failedCount?: number;
 };
 
+// Races each dependency check against a short bound (see with-timeout.server.ts)
+// so a hanging Postgres/Redis/OSS connection can't make /health itself hang —
+// a health endpoint that never responds is worse than one reporting "error".
+function boundedCheck<T extends HealthCheck>(check: () => Promise<T>, label: string): Promise<T> {
+  const timeoutMs = getHealthCheckTimeoutMs();
+  const startedAt = performance.now();
+
+  return withTimeout(
+    check,
+    timeoutMs,
+    () =>
+      ({
+        status: "error",
+        latencyMs: getLatency(startedAt),
+        message: `${label} check timed out after ${timeoutMs}ms.`,
+      }) as T,
+  );
+}
+
 export async function loader() {
   const [database, redis, environment, ffmpeg, storage, outbox] = await Promise.all([
-    checkDatabase(),
-    checkRedis(),
+    boundedCheck(checkDatabase, "database"),
+    boundedCheck(checkRedis, "redis"),
     checkEnvironment(),
-    checkFfmpeg(),
-    checkStorage(),
-    checkOutbox(),
+    boundedCheck(checkFfmpeg, "ffmpeg"),
+    boundedCheck(checkStorage, "storage"),
+    boundedCheck(checkOutbox, "outbox"),
   ]);
 
   const healthy = [database, redis, environment, ffmpeg, storage, outbox].every(

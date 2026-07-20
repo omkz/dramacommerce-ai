@@ -4,25 +4,21 @@
 // modules, since it runs via plain `node`, not `tsx`/esbuild. Key format,
 // path-traversal guard, and OSS wiring must stay behaviorally identical to
 // the TS drivers in app/services/storage/ — if you change one, change both.
-import { mkdir, readFile, rm, writeFile, copyFile } from "node:fs/promises";
-import { createWriteStream } from "node:fs";
-import { Readable, Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileTypeFromBuffer } from "file-type";
 import OSS from "ali-oss";
+import { downloadToFile, ExternalRequestError, wrapProviderError } from "./http-client.mjs";
+import {
+  getMediaDownloadMaxBytes,
+  getMediaDownloadTimeoutMs,
+  getOssRequestTimeoutMs,
+} from "./timeout-config.mjs";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 const CATEGORY_PREFIXES = ["product-images", "scene-videos", "final-videos"];
 const LEGACY_UPLOADS_PREFIX = "/uploads/";
-
-const DEFAULT_DOWNLOAD_TIMEOUT_MS = Number(
-  process.env.MEDIA_DOWNLOAD_TIMEOUT_MS || "120000",
-);
-const DEFAULT_DOWNLOAD_MAX_BYTES = Number(
-  process.env.MEDIA_DOWNLOAD_MAX_BYTES || String(200 * 1024 * 1024),
-);
 
 export function getStorageMode() {
   return process.env.MEDIA_STORAGE_DRIVER === "oss" ? "oss" : "local";
@@ -89,7 +85,7 @@ function getOssClient() {
     accessKeySecret,
     endpoint,
     secure: true,
-    timeout: 10_000,
+    timeout: getOssRequestTimeoutMs(),
   });
 
   return ossClient;
@@ -99,7 +95,11 @@ function requireEnv(name) {
   const value = process.env[name];
 
   if (!value) {
-    throw new Error(`${name} is required when MEDIA_STORAGE_DRIVER=oss.`);
+    throw new ExternalRequestError(
+      "auth_config",
+      `${name} is required when MEDIA_STORAGE_DRIVER=oss.`,
+      { provider: "oss", operation: "config" },
+    );
   }
 
   return value;
@@ -115,7 +115,7 @@ export async function saveGeneratedFile(localPath, { category, extension, projec
     try {
       await getOssClient().put(key, localPath);
     } catch (error) {
-      throw new Error(`OSS upload failed: ${describeOssError(error)}`);
+      throw wrapProviderError(error, { provider: "oss", operation: "upload" });
     }
 
     return key;
@@ -130,7 +130,10 @@ export async function saveGeneratedFile(localPath, { category, extension, projec
 
 export async function readManagedBuffer(ref) {
   if (!isManagedRef(ref)) {
-    throw new Error(`Invalid storage reference: ${ref}`);
+    throw new ExternalRequestError("permanent_client", `Invalid storage reference: ${ref}`, {
+      provider: "storage",
+      operation: "read",
+    });
   }
 
   if (getStorageMode() === "oss") {
@@ -138,7 +141,7 @@ export async function readManagedBuffer(ref) {
       const result = await getOssClient().get(toRelativeKey(ref));
       return result.content;
     } catch (error) {
-      throw new Error(`OSS read failed: ${describeOssError(error)}`);
+      throw wrapProviderError(error, { provider: "oss", operation: "read" });
     }
   }
 
@@ -153,73 +156,26 @@ export async function readManagedAsDataUrl(ref) {
   return `data:${mime};base64,${buffer.toString("base64")}`;
 }
 
-// Downloads a ref (managed storage key/legacy path, or an arbitrary
-// external URL like a raw Wan/TTS provider link) to a local file. External
-// downloads are timeout- and size-bounded so a slow or oversized provider
-// response can't hang or exhaust worker memory/disk indefinitely.
-export async function downloadToPath(ref, destPath) {
+// Downloads a ref (managed storage key/legacy path, or an arbitrary external
+// URL like a raw Wan/TTS provider link) to a local file. External downloads
+// go through the shared streaming downloader — timeout- and size-bounded,
+// protocol-checked, redirect-capped — so a slow, oversized, or malicious
+// provider response can't hang or exhaust worker memory/disk, or redirect
+// this worker into fetching an unintended scheme/host.
+export async function downloadToPath(ref, destPath, { expectedContentTypePrefixes } = {}) {
   if (isManagedRef(ref)) {
     const buffer = await readManagedBuffer(ref);
     await writeFile(destPath, buffer);
     return;
   }
 
-  await downloadRemoteFile(ref, destPath, {
-    timeoutMs: DEFAULT_DOWNLOAD_TIMEOUT_MS,
-    maxBytes: DEFAULT_DOWNLOAD_MAX_BYTES,
+  await downloadToFile({
+    url: ref,
+    destPath,
+    timeoutMs: getMediaDownloadTimeoutMs(),
+    maxBytes: getMediaDownloadMaxBytes(),
+    provider: "media",
+    operation: "download",
+    expectedContentTypePrefixes,
   });
-}
-
-async function downloadRemoteFile(url, destPath, { timeoutMs, maxBytes }) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download clip: ${response.status} ${response.statusText}`);
-  }
-
-  const contentLength = Number(response.headers.get("content-length") || "0");
-
-  if (contentLength > maxBytes) {
-    throw new Error(
-      `Failed to download clip: response size ${contentLength} exceeds the ${maxBytes}-byte limit.`,
-    );
-  }
-
-  let bytesRead = 0;
-  const limiter = new Transform({
-    transform(chunk, _encoding, callback) {
-      bytesRead += chunk.length;
-
-      if (bytesRead > maxBytes) {
-        callback(new Error(`Failed to download clip: exceeded the ${maxBytes}-byte limit.`));
-        return;
-      }
-
-      callback(null, chunk);
-    },
-  });
-
-  try {
-    await pipeline(Readable.fromWeb(response.body), limiter, createWriteStream(destPath));
-  } catch (error) {
-    await rm(destPath, { force: true });
-    throw error;
-  }
-}
-
-function describeOssError(error) {
-  if (error && typeof error === "object") {
-    const parts = [
-      typeof error.name === "string" ? error.name : undefined,
-      typeof error.code === "string" ? `code=${error.code}` : undefined,
-      typeof error.status === "number" ? `status=${error.status}` : undefined,
-      typeof error.message === "string" ? error.message : undefined,
-    ].filter(Boolean);
-
-    if (parts.length > 0) {
-      return parts.join(" ");
-    }
-  }
-
-  return "Unknown OSS error";
 }

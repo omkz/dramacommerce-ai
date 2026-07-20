@@ -18,7 +18,7 @@
     "start:worker": "node build/worker/showrunner-worker.mjs",
     "start:outbox": "node build/worker/outbox-dispatcher.mjs",
     "typecheck": "react-router typegen && tsc",
-    "test": "tsx --test app/services/storage/*.test.ts app/services/*.test.ts"
+    "test": "tsx --test app/services/storage/*.test.ts app/services/http/*.test.ts app/services/*.test.ts scripts/lib/*.test.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.34.3",

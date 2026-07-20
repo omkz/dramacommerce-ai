@@ -2,6 +2,8 @@ import {
   parseVideoGenerationStatus,
   type VideoGenerationStatus,
 } from "~/types/video-status";
+import { ExternalRequestError, requestJson } from "~/services/http/http-client.server";
+import { getWanCreateTimeoutMs, getWanPollTimeoutMs } from "~/services/http/timeout-config.server";
 
 type WanCreateTaskResponse = {
   output?: {
@@ -26,6 +28,13 @@ type WanQueryTaskResponse = {
   message?: string;
 };
 
+export class WanConfigurationError extends Error {
+  constructor() {
+    super("Wan video environment variables are not configured.");
+    this.name = "WanConfigurationError";
+  }
+}
+
 export async function createWanTextToVideoTask(prompt: string): Promise<{
   taskId: string;
   status: VideoGenerationStatus;
@@ -35,12 +44,15 @@ export async function createWanTextToVideoTask(prompt: string): Promise<{
   const model = process.env.WAN_VIDEO_MODEL || "wan2.1-t2v-turbo";
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Wan video environment variables are not configured.");
+    throw new WanConfigurationError();
   }
 
-  const response = await fetch(
-    `${baseUrl}/api/v1/services/aigc/video-generation/video-synthesis`,
-    {
+  const { data } = await requestJson<WanCreateTaskResponse>({
+    url: `${baseUrl}/api/v1/services/aigc/video-generation/video-synthesis`,
+    timeoutMs: getWanCreateTimeoutMs(),
+    provider: "wan",
+    operation: "video.create",
+    init: {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -61,22 +73,16 @@ export async function createWanTextToVideoTask(prompt: string): Promise<{
         },
       }),
     },
-  );
-
-  const data = (await readJsonResponse(response)) as WanCreateTaskResponse;
-
-
-  if (!response.ok) {
-    throw new Error(
-      data.message || data.code || `Wan API error: ${response.status}`,
-    );
-  }
+  });
 
   const taskId = data.output?.task_id;
   const status = parseVideoGenerationStatus(data.output?.task_status);
 
   if (!taskId) {
-    throw new Error("Wan did not return a task_id.");
+    throw new ExternalRequestError("invalid_response", "Wan did not return a task_id.", {
+      provider: "wan",
+      operation: "video.create",
+    });
   }
 
   return {
@@ -95,28 +101,29 @@ export async function queryWanVideoTask(taskId: string): Promise<{
   const baseUrl = process.env.DASHSCOPE_VIDEO_BASE_URL;
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Wan video environment variables are not configured.");
+    throw new WanConfigurationError();
   }
 
-  const response = await fetch(`${baseUrl}/api/v1/tasks/${taskId}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
+  const { data } = await requestJson<WanQueryTaskResponse>({
+    url: `${baseUrl}/api/v1/tasks/${taskId}`,
+    timeoutMs: getWanPollTimeoutMs(),
+    provider: "wan",
+    operation: "video.poll",
+    init: {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
     },
   });
-
-  const data = (await readJsonResponse(response)) as WanQueryTaskResponse;
-
-  if (!response.ok) {
-    throw new Error(
-      data.message || data.code || `Wan task query error: ${response.status}`,
-    );
-  }
 
   const output = data.output;
 
   if (!output?.task_id) {
-    throw new Error("Wan returned an invalid task result.");
+    throw new ExternalRequestError("invalid_response", "Wan returned an invalid task result.", {
+      provider: "wan",
+      operation: "video.poll",
+    });
   }
 
   return {
@@ -125,25 +132,4 @@ export async function queryWanVideoTask(taskId: string): Promise<{
     videoUrl: output.video_url,
     errorMessage: output.message,
   };
-}
-
-async function readJsonResponse(response: Response): Promise<unknown> {
-  const text = await response.text();
-
-  if (!text.trim()) {
-    throw new Error(
-      `Wan API returned an empty response. Status: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(
-      `Wan API returned non-JSON response. Status: ${response.status} ${response.statusText}. Body: ${text.slice(
-        0,
-        500,
-      )}`,
-    );
-  }
 }
